@@ -1,0 +1,66 @@
+CA-136041: Restrict should_multipath() success conditions
+
+Signed-off-by: Stefano Panella <stefano.panella@citrix.com>
+
+In the manual for Multipath there is a section for find_multipaths 
+setting:
+
+"""
+
+Table 4 .1. Multipath Configuration Defaults
+
+find_multipaths:
+
+Defines the mode for setting up multipath devices. If this
+parameter is set to yes, then multipath will not try to create a
+device for every non-blacklisted path. Instead multipath will
+create a device only if one of three conditions are met:
+
+1) There are at least two non-blacklisted paths with the same
+WWID.
+
+2) The user manually forces the creation of the device by
+specifying a device with the multipath command.
+
+3) A path has the same WWID as a multipath device that was
+previously created. Whenever a multipath device is created with
+find_multipaths set, multipath remembers the WWID of the
+device so that it will automatically create the device again as
+soon as it sees a path with that WWID. This allows you to have
+multipath automatically choose the correct paths to make into
+multipath devices, without having to edit the multipath blacklist.
+For instructions on the procedure to follow if you have previously
+created multipath devices when the find_multipaths
+parameter was not set
+
+"""
+
+This patch is removing condition 1), so it will never auto multipath
+unless the WWID is al;ready in the WWID file or we force a WWID to 
+be multipathed.
+
+diff -aru a/libmultipath/wwids.c b/libmultipath/wwids.c
+--- a/libmultipath/wwids.c	2016-03-11 15:44:48.273059959 +0000
++++ b/libmultipath/wwids.c	2016-03-14 11:15:39.265302646 +0000
+@@ -274,6 +274,13 @@
+ 	if (!conf->find_multipaths && !ignore_new_devs)
+ 		return 1;
+ 
++	condlog(2, "Warning: should_multipath() only based on wwids. dev = %s", pp1->dev);
++#if 0
++	/* 
++	 * Romove this condition where should_multipath is returning
++	 * true because it has found more than one path with same WWID.
++	 * In this way the WWID file will act as a white list
++	 */
+ 	condlog(4, "checking if %s should be multipathed", pp1->dev);
+ 	if (!ignore_new_devs) {
+ 		vector_foreach_slot(pathvec, pp2, i) {
+@@ -286,6 +293,7 @@
+ 			}
+ 		}
+ 	}
++#endif
+ 	if (check_wwids_file(pp1->wwid, 0) < 0) {
+ 		condlog(3, "wwid %s not in wwids file, skipping %s",
+ 			pp1->wwid, pp1->dev);

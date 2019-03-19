@@ -1,0 +1,19 @@
+Improve error handling in reconfigure
+
+If load_config fails bad things will happen
+otherwise (memory leak and segfault)
+
+Signed-off-by: Germano Percossi <germano.percossi@citrix.com>
+
+diff --git a/multipathd/main.c b/multipathd/main.c
+--- a/multipathd/main.c
++++ b/multipathd/main.c
+@@ -1432,6 +1432,8 @@ reconfigure (struct vectors * vecs)
+ 		configure(vecs, 1);
+ 		free_config(old);
+ 		retval = 0;
++	} else {
++		conf = old;
+ 	}
+ 	update_timestamp(0);
+ 

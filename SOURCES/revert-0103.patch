@@ -1,0 +1,24 @@
+CA-184578: Fix multipath booting on CentOS 7.1+
+
+When multipathd first starts, it gets the wwid of each device
+and compares it with the blacklist exception and removes each
+existing multipath device (which has been set up in the initrd)
+which does not meet the criteria. For some reason, at boot,
+the device does not return it's wwid (either through udev or page 0x83)
+and so multipathd removes it which causes the boot to fail.
+To work around this, revert this patch which somehow prevents multipathd
+from later recreating the multipath device.
+
+diff --git a/multipath/multipath.rules b/multipath/multipath.rules
+index bca3510..f10fa8f 100644
+--- a/multipath/multipath.rules
++++ b/multipath/multipath.rules
+@@ -47,7 +47,7 @@ ENV{DM_UUID}!="mpath-?*", GOTO="end_mpath"
+ ENV{DM_ACTIVATION}=="1", ENV{DM_MULTIPATH_NEED_KPARTX}="1"
+ ENV{DM_SUSPENDED}=="1", GOTO="end_mpath"
+ ENV{DM_ACTION}=="PATH_FAILED", GOTO="end_mpath"
+-ENV{DM_ACTIVATION}!="1", ENV{DM_MULTIPATH_NEED_KPARTX}!="1", GOTO="end_mpath"
++#ENV{DM_ACTIVATION}!="1", ENV{DM_MULTIPATH_NEED_KPARTX}!="1", GOTO="end_mpath"
+ RUN+="$env{MPATH_SBIN_PATH}/kpartx -an $tempnode", \
+ 	ENV{DM_MULTIPATH_NEED_KPARTX}=""
+ LABEL="end_mpath"

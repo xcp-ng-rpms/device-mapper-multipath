@@ -1,0 +1,16 @@
+---
+ multipath/mpathconf |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+Index: multipath-tools-130222/multipath/mpathconf
+===================================================================
+--- multipath-tools-130222.orig/multipath/mpathconf
++++ multipath-tools-130222/multipath/mpathconf
+@@ -316,6 +316,6 @@ elif [ "$ENABLE" = 0 ]; then
+ 	if [ "$HAVE_MULTIPATHD" = 1 ]; then
+ 		systemctl stop multipathd.service
+ 	fi
+-elif [ -n "$CHANGED_CONFIG" -a "$HAVE_MULTIPATHD" = 1 ]; then
++elif [ "$HAVE_MULTIPATHD" = 1 ]; then
+ 	systemctl reload multipathd.service
+ fi
