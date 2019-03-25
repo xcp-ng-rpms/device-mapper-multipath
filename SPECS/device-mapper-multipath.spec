@@ -158,6 +158,7 @@ Requires(postun): systemd-units
 Provides: xenserver-multipath
 
 # build/setup
+BuildRequires: gcc
 BuildRequires: libaio-devel, device-mapper-devel >= 1.02.89
 BuildRequires: libselinux-devel, libsepol-devel
 BuildRequires: readline-devel, ncurses-devel
