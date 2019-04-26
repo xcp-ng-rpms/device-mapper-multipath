@@ -1,0 +1,46 @@
+---
+ Makefile.inc       |    2 +-
+ multipath/Makefile |   10 +++++-----
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+Index: multipath-tools-130222/multipath/Makefile
+===================================================================
+--- multipath-tools-130222.orig/multipath/Makefile
++++ multipath-tools-130222/multipath/Makefile
+@@ -24,9 +24,9 @@ install:
+ 	$(INSTALL_PROGRAM) -d $(DESTDIR)$(bindir)
+ 	$(INSTALL_PROGRAM) -m 755 $(EXEC) $(DESTDIR)$(bindir)/
+ 	$(INSTALL_PROGRAM) -m 755 mpathconf $(DESTDIR)$(bindir)/
+-	$(INSTALL_PROGRAM) -d $(DESTDIR)/usr/lib/udev/rules.d
+-	$(INSTALL_PROGRAM) -m 644 multipath.rules $(DESTDIR)/usr/lib/udev/rules.d/62-multipath.rules
+-	$(INSTALL_PROGRAM) -m 644 11-dm-mpath.rules $(DESTDIR)/usr/lib/udev/rules.d/11-dm-mpath.rules
++	$(INSTALL_PROGRAM) -d $(DESTDIR)$(libudevdir)/rules.d
++	$(INSTALL_PROGRAM) -m 644 multipath.rules $(DESTDIR)$(libudevdir)/rules.d/62-multipath.rules
++	$(INSTALL_PROGRAM) -m 644 11-dm-mpath.rules $(DESTDIR)$(libudevdir)/rules.d/11-dm-mpath.rules
+ 	$(INSTALL_PROGRAM) -d $(DESTDIR)$(mandir)
+ 	$(INSTALL_PROGRAM) -m 644 $(EXEC).8.gz $(DESTDIR)$(mandir)
+ 	$(INSTALL_PROGRAM) -d $(DESTDIR)$(man5dir)
+@@ -34,8 +34,8 @@ install:
+ 	$(INSTALL_PROGRAM) -m 644 mpathconf.8.gz $(DESTDIR)$(mandir)
+ 
+ uninstall:
+-	rm $(DESTDIR)/usr/lib/udev/rules.d/62-multipath.rules
+-	rm $(DESTDIR)/usr/lib/udev/rules.d/11-dm-mpath.rules
++	rm $(DESTDIR)$(libudevdir)/rules.d/62-multipath.rules
++	rm $(DESTDIR)$(libudevdir)/rules.d/11-dm-mpath.rules
+ 	rm $(DESTDIR)$(bindir)/$(EXEC)
+ 	rm $(DESTDIR)$(bindir)/mpathconf
+ 	rm $(DESTDIR)$(mandir)/$(EXEC).8.gz
+Index: multipath-tools-130222/Makefile.inc
+===================================================================
+--- multipath-tools-130222.orig/Makefile.inc
++++ multipath-tools-130222/Makefile.inc
+@@ -24,7 +24,7 @@ endif
+ prefix      = 
+ exec_prefix = $(prefix)
+ bindir      = $(exec_prefix)/usr/sbin
+-libudevdir  = ${prefix}/lib/udev
++libudevdir  = ${prefix}/usr/lib/udev
+ multipathdir = $(TOPDIR)/libmultipath
+ mandir      = $(prefix)/usr/share/man/man8
+ man5dir     = $(prefix)/usr/share/man/man5

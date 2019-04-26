@@ -1,0 +1,17 @@
+---
+ multipath/multipath.conf.5 |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+Index: multipath-tools-130222/multipath/multipath.conf.5
+===================================================================
+--- multipath-tools-130222.orig/multipath/multipath.conf.5
++++ multipath-tools-130222/multipath/multipath.conf.5
+@@ -388,7 +388,7 @@ retry interval
+ \fIno_path_retry\fR * \fIpolling_interval\fR
+ if a number of retries is given with \fIno_path_retry\fR and the
+ overall retry interval is longer than the specified \fIdev_loss_tmo\fR value.
+-The linux kernel will cap this value to \fI300\fR if \fBfast_io_fail_tmo\fR
++The linux kernel will cap this value to \fI600\fR if \fBfast_io_fail_tmo\fR
+ is not set.
+ .TP
+ .B queue_without_daemon

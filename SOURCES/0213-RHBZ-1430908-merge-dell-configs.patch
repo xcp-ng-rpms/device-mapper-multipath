@@ -1,0 +1,191 @@
+---
+ libmultipath/hwtable.c  |   81 +-----------------------------------------------
+ multipath.conf.defaults |   69 +---------------------------------------
+ 2 files changed, 5 insertions(+), 145 deletions(-)
+
+Index: multipath-tools-130222/libmultipath/hwtable.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/hwtable.c
++++ multipath-tools-130222/libmultipath/hwtable.c
+@@ -731,91 +731,16 @@ static struct hwentry default_hw[] = {
+ 		.prio_args     = NULL,
+ 	},
+ 	{
+-		/* DELL MD3000 */
++		/* DELL MD3xxxx family */
+ 		.vendor        = "DELL",
+-		.product       = "MD3000",
++		.product       = "^MD3",
+ 		.bl_product    = "Universal Xport",
+ 		.features      = "2 pg_init_retries 50",
+ 		.hwhandler     = "1 rdac",
+ 		.pgpolicy      = GROUP_BY_PRIO,
+ 		.pgfailback    = -FAILBACK_IMMEDIATE,
+ 		.rr_weight     = RR_WEIGHT_NONE,
+-		.no_path_retry = 15,
+-		.checker_name  = RDAC,
+-		.prio_name     = PRIO_RDAC,
+-		.prio_args     = NULL,
+-	},
+-	{
+-		/* DELL MD3000i */
+-		.vendor        = "DELL",
+-		.product       = "MD3000i",
+-		.bl_product    = "Universal Xport",
+-		.features      = "2 pg_init_retries 50",
+-		.hwhandler     = "1 rdac",
+-		.pgpolicy      = GROUP_BY_PRIO,
+-		.pgfailback    = -FAILBACK_IMMEDIATE,
+-		.rr_weight     = RR_WEIGHT_NONE,
+-		.no_path_retry = 15,
+-		.checker_name  = RDAC,
+-		.prio_name     = PRIO_RDAC,
+-		.prio_args     = NULL,
+-	},
+-	{
+-		/* DELL MD32xx */
+-		.vendor        = "DELL",
+-		.product       = "MD32xx",
+-		.bl_product    = "Universal Xport",
+-		.features      = "2 pg_init_retries 50",
+-		.hwhandler     = "1 rdac",
+-		.pgpolicy      = GROUP_BY_PRIO,
+-		.pgfailback    = -FAILBACK_IMMEDIATE,
+-		.rr_weight     = RR_WEIGHT_NONE,
+-		.no_path_retry = 15,
+-		.checker_name  = RDAC,
+-		.prio_name     = PRIO_RDAC,
+-		.prio_args     = NULL,
+-	},
+-	{
+-		/* DELL MD32xxi */
+-		.vendor        = "DELL",
+-		.product       = "MD32xxi",
+-		.bl_product    = "Universal Xport",
+-		.features      = "2 pg_init_retries 50",
+-		.hwhandler     = "1 rdac",
+-		.pgpolicy      = GROUP_BY_PRIO,
+-		.pgfailback    = -FAILBACK_IMMEDIATE,
+-		.rr_weight     = RR_WEIGHT_NONE,
+-		.no_path_retry = 15,
+-		.checker_name  = RDAC,
+-		.prio_name     = PRIO_RDAC,
+-		.prio_args     = NULL,
+-	},
+-	{
+-		/* DELL MD36xxi */
+-		.vendor        = "DELL",
+-		.product       = "MD36xxi",
+-		.bl_product    = "Universal Xport",
+-		.features      = "2 pg_init_retries 50",
+-		.hwhandler     = "1 rdac",
+-		.pgpolicy      = GROUP_BY_PRIO,
+-		.pgfailback    = -FAILBACK_IMMEDIATE,
+-		.rr_weight     = RR_WEIGHT_NONE,
+-		.no_path_retry = 15,
+-		.checker_name  = RDAC,
+-		.prio_name     = PRIO_RDAC,
+-		.prio_args     = NULL,
+-	},
+-	{
+-		/* DELL MD36xxf */
+-		.vendor        = "DELL",
+-		.product       = "MD36xxf",
+-		.bl_product    = "Universal Xport",
+-		.features      = "2 pg_init_retries 50",
+-		.hwhandler     = "1 rdac",
+-		.pgpolicy      = GROUP_BY_PRIO,
+-		.pgfailback    = -FAILBACK_IMMEDIATE,
+-		.rr_weight     = RR_WEIGHT_NONE,
+-		.no_path_retry = 15,
++		.no_path_retry = 30,
+ 		.checker_name  = RDAC,
+ 		.prio_name     = PRIO_RDAC,
+ 		.prio_args     = NULL,
+Index: multipath-tools-130222/multipath.conf.defaults
+===================================================================
+--- multipath-tools-130222.orig/multipath.conf.defaults
++++ multipath-tools-130222/multipath.conf.defaults
+@@ -619,7 +619,7 @@
+ #	}
+ #	device {
+ #		vendor "DELL"
+-#		product "MD3000"
++#		product "^MD3"
+ #		product_blacklist "Universal Xport"
+ #		path_grouping_policy "group_by_prio"
+ #		path_checker "rdac"
+@@ -628,72 +628,7 @@
+ #		prio "rdac"
+ #		failback immediate
+ #		rr_weight "uniform"
+-#		no_path_retry 15
+-#	}
+-#	device {
+-#		vendor "DELL"
+-#		product "MD3000i"
+-#		product_blacklist "Universal Xport"
+-#		path_grouping_policy "group_by_prio"
+-#		path_checker "rdac"
+-#		features "2 pg_init_retries 50"
+-#		hardware_handler "1 rdac"
+-#		prio "rdac"
+-#		failback immediate
+-#		rr_weight "uniform"
+-#		no_path_retry 15
+-#	}
+-#	device {
+-#		vendor "DELL"
+-#		product "MD32xx"
+-#		product_blacklist "Universal Xport"
+-#		path_grouping_policy "group_by_prio"
+-#		path_checker "rdac"
+-#		features "2 pg_init_retries 50"
+-#		hardware_handler "1 rdac"
+-#		prio "rdac"
+-#		failback immediate
+-#		rr_weight "uniform"
+-#		no_path_retry 15
+-#	}
+-#	device {
+-#		vendor "DELL"
+-#		product "MD32xxi"
+-#		product_blacklist "Universal Xport"
+-#		path_grouping_policy "group_by_prio"
+-#		path_checker "rdac"
+-#		features "2 pg_init_retries 50"
+-#		hardware_handler "1 rdac"
+-#		prio "rdac"
+-#		failback immediate
+-#		rr_weight "uniform"
+-#		no_path_retry 15
+-#	}
+-#	device {
+-#		vendor "DELL"
+-#		product "MD36xxi"
+-#		product_blacklist "Universal Xport"
+-#		path_grouping_policy "group_by_prio"
+-#		path_checker "rdac"
+-#		features "2 pg_init_retries 50"
+-#		hardware_handler "1 rdac"
+-#		prio "rdac"
+-#		failback immediate
+-#		rr_weight "uniform"
+-#		no_path_retry 15
+-#	}
+-#	device {
+-#		vendor "DELL"
+-#		product "MD36xxf"
+-#		product_blacklist "Universal Xport"
+-#		path_grouping_policy "group_by_prio"
+-#		path_checker "rdac"
+-#		features "2 pg_init_retries 50"
+-#		hardware_handler "1 rdac"
+-#		prio "rdac"
+-#		failback immediate
+-#		rr_weight "uniform"
+-#		no_path_retry 15
++#		no_path_retry 30
+ #	}
+ #	device {
+ #		vendor "NETAPP"

@@ -1,150 +1,258 @@
 Summary: Tools to manage multipath devices using device-mapper
 Name: device-mapper-multipath
 Version: 0.4.9
-Release: 86.xs+1.2%{dist}
+Release: 119.xs+1.2%{?dist}
 License: GPL+
 Group: System Environment/Base
 URL: http://christophe.varoqui.free.fr/
 
-Source0: multipath-tools-130222.tgz
-Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XS/repos/device-mapper-multipath/archive?at=1.2&format=tar#/device-mapper-multipath.patches.tar) = d0e8d2c0a5708bfab36cd109a123d08c64c831a9
-Source1: multipath.conf
-Patch0001: 0001-RH-dont_start_with_no_config.patch
-Patch0002: 0002-RH-multipath.rules.patch
-Patch0003: 0003-RH-Make-build-system-RH-Fedora-friendly.patch
-Patch0004: 0004-RH-multipathd-blacklist-all-by-default.patch
-Patch0005: 0005-RH-add-mpathconf.patch
-Patch0006: 0006-RH-add-find-multipaths.patch
-Patch0007: 0007-RH-add-hp_tur-checker.patch
-Patch0008: 0008-RH-revert-partition-changes.patch
-Patch0009: 0009-RH-RHEL5-style-partitions.patch
-Patch0010: 0010-RH-dont-remove-map-on-enomem.patch
-Patch0011: 0011-RH-deprecate-uid-gid-mode.patch
-Patch0012: 0012-RH-kpartx-msg.patch
-Patch0013: 0013-RHBZ-883981-cleanup-rpmdiff-issues.patch
-Patch0014: 0014-RH-handle-other-sector-sizes.patch
-Patch0015: 0015-RH-fix-output-buffer.patch
-Patch0016: 0016-RH-dont-print-ghost-messages.patch
-#Patch0017: 0017-RH-fix-sigusr1.patch
-Patch0018: 0018-RH-fix-factorize.patch
-Patch0019: 0019-RH-fix-sockets.patch
-Patch0020: 0020-RHBZ-907360-static-pthread-init.patch
-Patch0021: 0021-RHBZ-919119-respect-kernel-cmdline.patch
-Patch0022: 0022-RH-multipathd-check-wwids.patch
-Patch0023: 0023-RH-multipath-wipe-wwid.patch
-Patch0024: 0024-RH-multipath-wipe-wwids.patch
-Patch0025: 0025-UPBZ-916668_add_maj_min.patch
-Patch0026: 0026-fix-checker-time.patch
-Patch0027: 0027-RH-get-wwid.patch
-Patch0028: 0028-RHBZ-929078-refresh-udev-dev.patch
-Patch0029: 0029-RH-no-prio-put-msg.patch
-Patch0030: 0030-RHBZ-916528-override-queue-no-daemon.patch
-Patch0031: 0031-RHBZ-957188-kpartx-use-dm-name.patch
-Patch0032: 0032-RHBZ-956464-mpathconf-defaults.patch
-Patch0033: 0033-RHBZ-829963-e-series-conf.patch
-Patch0034: 0034-RHBZ-851416-mpathconf-display.patch
-Patch0035: 0035-RHBZ-891921-list-mpp.patch
-Patch0036: 0036-RHBZ-949239-load-multipath-module.patch
-Patch0037: 0037-RHBZ-768873-fix-rename.patch
-Patch0038: 0038-RHBZ-799860-netapp-config.patch
-Patch0039: 0039-RH-detect-prio-fix.patch
-Patch0040: 0040-RH-bindings-fix.patch
-Patch0041: 0041-RH-check-for-erofs.patch
-Patch0042: 0042-UP-fix-signal-handling.patch
-Patch0043: 0043-RH-signal-waiter.patch
-Patch0044: 0044-RHBZ-976688-fix-wipe-wwids.patch
-Patch0045: 0045-RHBZ-977297-man-page-fix.patch
-Patch0046: 0046-RHBZ-883981-move-udev-rules.patch
-Patch0047: 0047-RHBZ-kpartx-read-only-loop-devs.patch
-Patch0048: 0048-RH-print-defaults.patch
-Patch0049: 0049-RH-remove-ID_FS_TYPE.patch
-Patch0050: 0050-RH-listing-speedup.patch
-Patch0051: 0051-UP-fix-cli-resize.patch
-Patch0052: 0052-RH-fix-bad-derefs.patch
-Patch0053: 0053-UP-fix-failback.patch
-Patch0054: 0054-UP-keep-udev-ref.patch
-Patch0055: 0055-UP-handle-quiesced-paths.patch
-Patch0056: 0056-UP-alua-prio-fix.patch
-Patch0057: 0057-UP-fix-tmo.patch
-Patch0058: 0058-UP-fix-failback.patch
-Patch0059: 0059-UP-flush-failure-queueing.patch
-Patch0060: 0060-UP-uevent-loop-udev.patch
-Patch0061: 0061-RH-display-find-mpaths.patch
-Patch0062: 0062-RH-dont-free-vecs.patch
-Patch0063: 0063-RH-fix-warning.patch
-Patch0064: 0064-RHBZ-1010040-fix-ID_FS-attrs.patch
-Patch0065: 0065-UPBZ-995538-fail-rdac-on-unavailable.patch
-Patch0066: 0066-UP-dos-4k-partition-fix.patch
-Patch0067: 0067-RHBZ-1022899-fix-udev-partition-handling.patch
-Patch0068: 0068-RHBZ-1034578-label-partition-devices.patch
-Patch0069: 0069-UPBZ-1033791-improve-rdac-checker.patch
-Patch0070: 0070-RHBZ-1036503-blacklist-td-devs.patch
-Patch0071: 0071-RHBZ-1031546-strip-dev.patch
-Patch0072: 0072-RHBZ-1039199-check-loop-control.patch
-Patch0073: 0073-RH-update-build-flags.patch
-Patch0074: 0074-RHBZ-1056976-dm-mpath-rules.patch
-Patch0075: 0075-RHBZ-1056976-reload-flag.patch
-Patch0076: 0076-RHBZ-1056686-add-hw_str_match.patch
-Patch0077: 0077-RHBZ-1054806-mpathconf-always-reload.patch
-Patch0078: 0078-RHBZ-1054044-fix-mpathconf-manpage.patch
-Patch0079: 0079-RHBZ-1070581-add-wwid-option.patch
-Patch0080: 0080-RHBZ-1075796-cmdline-wwid.patch
-Patch0081: 0081-RHBZ-1066264-check-prefix-on-rename.patch
-Patch0082: 0082-UPBZ-1109995-no-sync-turs-on-pthread_cancel.patch
-Patch0083: 0083-RHBZ-1080055-orphan-paths-on-reload.patch
-Patch0084: 0084-RHBZ-1110000-multipath-man.patch
-Patch0085: 0085-UPBZ-1110006-datacore-config.patch
-Patch0086: 0086-RHBZ-1110007-orphan-path-on-failed-add.patch
-Patch0087: 0087-RHBZ-1110013-config-error-checking.patch
-Patch0088: 0088-RHBZ-1069811-configurable-prio-timeout.patch
-Patch0089: 0089-RHBZ-1110016-add-noasync-option.patch
-Patch0090: 0090-UPBZ-1080038-reorder-paths-for-round-robin.patch
-Patch0091: 0091-RHBZ-1069584-fix-empty-values-fast-io-fail-and-dev-loss.patch
-Patch0092: 0092-UPBZ-1104605-reload-on-rename.patch
-Patch0093: 0093-UPBZ-1086825-user-friendly-name-remap.patch
-Patch0094: 0094-RHBZ-1086825-cleanup-remap.patch
-Patch0095: 0095-RHBZ-1127944-xtremIO-config.patch
-Patch0096: 0096-RHBZ-979474-new-wildcards.patch
-Patch0097: 0097-RH-fix-coverity-errors.patch
-Patch0098: 0098-UPBZ-1067171-mutipath-i.patch
-Patch0099: 0099-RH-add-all-devs.patch
-Patch0100: 0100-RHBZ-1067171-multipath-i-update.patch
-Patch0101: 0101-RH-cleanup-partmaps-code.patch
-Patch0102: 0102-RHBZ-631009-deferred-remove.patch
-Patch0103: 0103-RHBZ-1148979-fix-partition-mapping-creation-race-with-kpartx.patch
-Patch0104: 0104-RHBZ-1159337-fix-double-free.patch
-Patch0105: 0105-RHBZ-1180032-find-multipaths-man.patch
-Patch0106: 0106-RHBZ-1169935-no-new-devs.patch
-Patch0107: 0107-RH-adapter-name-wildcard.patch
-Patch0108: 0108-RHBZ-1153832-kpartx-remove-devs.patch
-Patch0109: 0109-RH-read-only-bindings.patch
-Patch0110: 0110-RHBZ-blacklist-vd-devs.patch
-Patch0111: 0111-RH-dont-show-pg-timeout.patch
-Patch0112: 0112-RHBZ-1194917-add-config_dir-option.patch
-Patch0113: 0113-RHBZ-1194917-cleanup.patch
-Patch0114: 0114-RHBZ-1196394-delayed-reintegration.patch
-Patch0115: 0115-RHBZ-1198418-fix-double-free.patch
-Patch0116: 0116-UPBZ-1188179-dell-36xxi.patch
-Patch0117: 0117-RHBZ-1198424-autodetect-clariion-alua.patch
-Patch0118: 0118-UPBZ-1200738-update-eternus-config.patch
-Patch0119: 0119-RHBZ-1081397-save-alua-info.patch
-Patch0120: 0120-RHBZ-1043093-realloc-fix.patch
-Patch0121: 0121-RHBZ-1197234-rules-fix.patch
-Patch0122: 0122-RHBZ-1212590-dont-use-var.patch
-Patch0123: 0123-UPBZ-1166072-fix-path-offline.patch
-Patch0124: 0124-RHBZ-1209275-retrigger-uevents.patch
-Patch0125: 0125-RHBZ-1153832-kpartx-delete.patch
-Patch0126: 0126-RHBZ-1211383-alias-collision.patch
-Patch0127: 0127-RHBZ-1201030-use-blk-availability.patch
-Patch0128: 0128-RHBZ-1222123-mpathconf-allow.patch
-Patch0129: 0129-UPBZ-1254292-iscsi-targetname.patch
-Patch0130: 0130-RHBZ-1259523-host_name_len.patch
-Patch0131: 0131-UPBZ-1259831-lock-retry.patch
-Patch0132: 0132-RHBZ-1296979-fix-define.patch
-Patch0133: 0133-RHBZ-1321019-wait-for-map-add.patch
-Patch0134: 0134-UPBZ-1328515-dont-fail-discovery.patch
-Patch0135: 0135-RHBZ-1330480-kpartx-sync.patch
-Patch0136: 0136-RHBZ-1335746-clear-chkr-msg.patch
+
+Source0: https://repo.citrite.net/xs-local-contrib/multipath-tools/multipath-tools-130222.tar.gz
+Source1: SOURCES/device-mapper-multipath/multipath.conf
+Patch1: SOURCES/device-mapper-multipath/0001-RH-dont_start_with_no_config.patch
+Patch2: SOURCES/device-mapper-multipath/0002-RH-multipath.rules.patch
+Patch3: SOURCES/device-mapper-multipath/0003-RH-Make-build-system-RH-Fedora-friendly.patch
+Patch4: SOURCES/device-mapper-multipath/0004-RH-multipathd-blacklist-all-by-default.patch
+Patch5: SOURCES/device-mapper-multipath/0005-RH-add-mpathconf.patch
+Patch6: SOURCES/device-mapper-multipath/0006-RH-add-find-multipaths.patch
+Patch7: SOURCES/device-mapper-multipath/0007-RH-add-hp_tur-checker.patch
+Patch8: SOURCES/device-mapper-multipath/0008-RH-revert-partition-changes.patch
+Patch9: SOURCES/device-mapper-multipath/0009-RH-RHEL5-style-partitions.patch
+Patch10: SOURCES/device-mapper-multipath/0010-RH-dont-remove-map-on-enomem.patch
+Patch11: SOURCES/device-mapper-multipath/0011-RH-deprecate-uid-gid-mode.patch
+Patch12: SOURCES/device-mapper-multipath/0012-RH-kpartx-msg.patch
+Patch13: SOURCES/device-mapper-multipath/0013-RHBZ-883981-cleanup-rpmdiff-issues.patch
+Patch14: SOURCES/device-mapper-multipath/0014-RH-handle-other-sector-sizes.patch
+Patch15: SOURCES/device-mapper-multipath/0015-RH-fix-output-buffer.patch
+Patch16: SOURCES/device-mapper-multipath/0016-RH-dont-print-ghost-messages.patch
+Patch18: SOURCES/device-mapper-multipath/0018-RH-fix-factorize.patch
+Patch19: SOURCES/device-mapper-multipath/0019-RH-fix-sockets.patch
+Patch20: SOURCES/device-mapper-multipath/0020-RHBZ-907360-static-pthread-init.patch
+Patch21: SOURCES/device-mapper-multipath/0021-RHBZ-919119-respect-kernel-cmdline.patch
+Patch22: SOURCES/device-mapper-multipath/0022-RH-multipathd-check-wwids.patch
+Patch23: SOURCES/device-mapper-multipath/0023-RH-multipath-wipe-wwid.patch
+Patch24: SOURCES/device-mapper-multipath/0024-RH-multipath-wipe-wwids.patch
+Patch25: SOURCES/device-mapper-multipath/0025-UPBZ-916668_add_maj_min.patch
+Patch26: SOURCES/device-mapper-multipath/0026-fix-checker-time.patch
+Patch27: SOURCES/device-mapper-multipath/0027-RH-get-wwid.patch
+Patch28: SOURCES/device-mapper-multipath/0028-RHBZ-929078-refresh-udev-dev.patch
+Patch29: SOURCES/device-mapper-multipath/0029-RH-no-prio-put-msg.patch
+Patch30: SOURCES/device-mapper-multipath/0030-RHBZ-916528-override-queue-no-daemon.patch
+Patch31: SOURCES/device-mapper-multipath/0031-RHBZ-957188-kpartx-use-dm-name.patch
+Patch32: SOURCES/device-mapper-multipath/0032-RHBZ-956464-mpathconf-defaults.patch
+Patch33: SOURCES/device-mapper-multipath/0033-RHBZ-829963-e-series-conf.patch
+Patch34: SOURCES/device-mapper-multipath/0034-RHBZ-851416-mpathconf-display.patch
+Patch35: SOURCES/device-mapper-multipath/0035-RHBZ-891921-list-mpp.patch
+Patch36: SOURCES/device-mapper-multipath/0036-RHBZ-949239-load-multipath-module.patch
+Patch37: SOURCES/device-mapper-multipath/0037-RHBZ-768873-fix-rename.patch
+Patch38: SOURCES/device-mapper-multipath/0038-RHBZ-799860-netapp-config.patch
+Patch39: SOURCES/device-mapper-multipath/0039-RH-detect-prio-fix.patch
+Patch40: SOURCES/device-mapper-multipath/0040-RH-bindings-fix.patch
+Patch41: SOURCES/device-mapper-multipath/0041-RH-check-for-erofs.patch
+Patch42: SOURCES/device-mapper-multipath/0042-UP-fix-signal-handling.patch
+Patch43: SOURCES/device-mapper-multipath/0043-RH-signal-waiter.patch
+Patch44: SOURCES/device-mapper-multipath/0044-RHBZ-976688-fix-wipe-wwids.patch
+Patch45: SOURCES/device-mapper-multipath/0045-RHBZ-977297-man-page-fix.patch
+Patch46: SOURCES/device-mapper-multipath/0046-RHBZ-883981-move-udev-rules.patch
+Patch47: SOURCES/device-mapper-multipath/0047-RHBZ-kpartx-read-only-loop-devs.patch
+Patch48: SOURCES/device-mapper-multipath/0048-RH-print-defaults.patch
+Patch49: SOURCES/device-mapper-multipath/0049-RH-remove-ID_FS_TYPE.patch
+Patch50: SOURCES/device-mapper-multipath/0050-RH-listing-speedup.patch
+Patch51: SOURCES/device-mapper-multipath/0051-UP-fix-cli-resize.patch
+Patch52: SOURCES/device-mapper-multipath/0052-RH-fix-bad-derefs.patch
+Patch53: SOURCES/device-mapper-multipath/0053-UP-fix-failback.patch
+Patch54: SOURCES/device-mapper-multipath/0054-UP-keep-udev-ref.patch
+Patch55: SOURCES/device-mapper-multipath/0055-UP-handle-quiesced-paths.patch
+Patch56: SOURCES/device-mapper-multipath/0056-UP-alua-prio-fix.patch
+Patch57: SOURCES/device-mapper-multipath/0057-UP-fix-tmo.patch
+Patch58: SOURCES/device-mapper-multipath/0058-UP-fix-failback.patch
+Patch59: SOURCES/device-mapper-multipath/0059-UP-flush-failure-queueing.patch
+Patch60: SOURCES/device-mapper-multipath/0060-UP-uevent-loop-udev.patch
+Patch61: SOURCES/device-mapper-multipath/0061-RH-display-find-mpaths.patch
+Patch62: SOURCES/device-mapper-multipath/0062-RH-dont-free-vecs.patch
+Patch63: SOURCES/device-mapper-multipath/0063-RH-fix-warning.patch
+Patch64: SOURCES/device-mapper-multipath/0064-RHBZ-1010040-fix-ID_FS-attrs.patch
+Patch65: SOURCES/device-mapper-multipath/0065-UPBZ-995538-fail-rdac-on-unavailable.patch
+Patch66: SOURCES/device-mapper-multipath/0066-UP-dos-4k-partition-fix.patch
+Patch67: SOURCES/device-mapper-multipath/0067-RHBZ-1022899-fix-udev-partition-handling.patch
+Patch68: SOURCES/device-mapper-multipath/0068-RHBZ-1034578-label-partition-devices.patch
+Patch69: SOURCES/device-mapper-multipath/0069-UPBZ-1033791-improve-rdac-checker.patch
+Patch70: SOURCES/device-mapper-multipath/0070-RHBZ-1036503-blacklist-td-devs.patch
+Patch71: SOURCES/device-mapper-multipath/0071-RHBZ-1031546-strip-dev.patch
+Patch72: SOURCES/device-mapper-multipath/0072-RHBZ-1039199-check-loop-control.patch
+Patch73: SOURCES/device-mapper-multipath/0073-RH-update-build-flags.patch
+Patch74: SOURCES/device-mapper-multipath/0074-RHBZ-1056976-dm-mpath-rules.patch
+Patch75: SOURCES/device-mapper-multipath/0075-RHBZ-1056976-reload-flag.patch
+Patch76: SOURCES/device-mapper-multipath/0076-RHBZ-1056686-add-hw_str_match.patch
+Patch77: SOURCES/device-mapper-multipath/0077-RHBZ-1054806-mpathconf-always-reload.patch
+Patch78: SOURCES/device-mapper-multipath/0078-RHBZ-1054044-fix-mpathconf-manpage.patch
+Patch79: SOURCES/device-mapper-multipath/0079-RHBZ-1070581-add-wwid-option.patch
+Patch80: SOURCES/device-mapper-multipath/0080-RHBZ-1075796-cmdline-wwid.patch
+Patch81: SOURCES/device-mapper-multipath/0081-RHBZ-1066264-check-prefix-on-rename.patch
+Patch82: SOURCES/device-mapper-multipath/0082-UPBZ-1109995-no-sync-turs-on-pthread_cancel.patch
+Patch83: SOURCES/device-mapper-multipath/0083-RHBZ-1080055-orphan-paths-on-reload.patch
+Patch84: SOURCES/device-mapper-multipath/0084-RHBZ-1110000-multipath-man.patch
+Patch85: SOURCES/device-mapper-multipath/0085-UPBZ-1110006-datacore-config.patch
+Patch86: SOURCES/device-mapper-multipath/0086-RHBZ-1110007-orphan-path-on-failed-add.patch
+Patch87: SOURCES/device-mapper-multipath/0087-RHBZ-1110013-config-error-checking.patch
+Patch88: SOURCES/device-mapper-multipath/0088-RHBZ-1069811-configurable-prio-timeout.patch
+Patch89: SOURCES/device-mapper-multipath/0089-RHBZ-1110016-add-noasync-option.patch
+Patch90: SOURCES/device-mapper-multipath/0090-UPBZ-1080038-reorder-paths-for-round-robin.patch
+Patch91: SOURCES/device-mapper-multipath/0091-RHBZ-1069584-fix-empty-values-fast-io-fail-and-dev-loss.patch
+Patch92: SOURCES/device-mapper-multipath/0092-UPBZ-1104605-reload-on-rename.patch
+Patch93: SOURCES/device-mapper-multipath/0093-UPBZ-1086825-user-friendly-name-remap.patch
+Patch94: SOURCES/device-mapper-multipath/0094-RHBZ-1086825-cleanup-remap.patch
+Patch95: SOURCES/device-mapper-multipath/0095-RHBZ-1127944-xtremIO-config.patch
+Patch96: SOURCES/device-mapper-multipath/0096-RHBZ-979474-new-wildcards.patch
+Patch97: SOURCES/device-mapper-multipath/0097-RH-fix-coverity-errors.patch
+Patch98: SOURCES/device-mapper-multipath/0098-UPBZ-1067171-mutipath-i.patch
+Patch99: SOURCES/device-mapper-multipath/0099-RH-add-all-devs.patch
+Patch100: SOURCES/device-mapper-multipath/0100-RHBZ-1067171-multipath-i-update.patch
+Patch101: SOURCES/device-mapper-multipath/0101-RH-cleanup-partmaps-code.patch
+Patch102: SOURCES/device-mapper-multipath/0102-RHBZ-631009-deferred-remove.patch
+Patch103: SOURCES/device-mapper-multipath/0103-RHBZ-1148979-fix-partition-mapping-creation-race-with-kpartx.patch
+Patch104: SOURCES/device-mapper-multipath/0104-RHBZ-1159337-fix-double-free.patch
+Patch105: SOURCES/device-mapper-multipath/0105-RHBZ-1180032-find-multipaths-man.patch
+Patch106: SOURCES/device-mapper-multipath/0106-RHBZ-1169935-no-new-devs.patch
+Patch107: SOURCES/device-mapper-multipath/0107-RH-adapter-name-wildcard.patch
+Patch108: SOURCES/device-mapper-multipath/0108-RHBZ-1153832-kpartx-remove-devs.patch
+Patch109: SOURCES/device-mapper-multipath/0109-RH-read-only-bindings.patch
+Patch110: SOURCES/device-mapper-multipath/0110-RHBZ-blacklist-vd-devs.patch
+Patch111: SOURCES/device-mapper-multipath/0111-RH-dont-show-pg-timeout.patch
+Patch112: SOURCES/device-mapper-multipath/0112-RHBZ-1194917-add-config_dir-option.patch
+Patch113: SOURCES/device-mapper-multipath/0113-RHBZ-1194917-cleanup.patch
+Patch114: SOURCES/device-mapper-multipath/0114-RHBZ-1196394-delayed-reintegration.patch
+Patch115: SOURCES/device-mapper-multipath/0115-RHBZ-1198418-fix-double-free.patch
+Patch116: SOURCES/device-mapper-multipath/0116-UPBZ-1188179-dell-36xxi.patch
+Patch117: SOURCES/device-mapper-multipath/0117-RHBZ-1198424-autodetect-clariion-alua.patch
+Patch118: SOURCES/device-mapper-multipath/0118-UPBZ-1200738-update-eternus-config.patch
+Patch119: SOURCES/device-mapper-multipath/0119-RHBZ-1081397-save-alua-info.patch
+Patch120: SOURCES/device-mapper-multipath/0120-RHBZ-1043093-realloc-fix.patch
+Patch121: SOURCES/device-mapper-multipath/0121-RHBZ-1197234-rules-fix.patch
+Patch122: SOURCES/device-mapper-multipath/0122-RHBZ-1212590-dont-use-var.patch
+Patch123: SOURCES/device-mapper-multipath/0123-UPBZ-1166072-fix-path-offline.patch
+Patch124: SOURCES/device-mapper-multipath/0124-RHBZ-1209275-retrigger-uevents.patch
+Patch125: SOURCES/device-mapper-multipath/0125-RHBZ-1153832-kpartx-delete.patch
+Patch126: SOURCES/device-mapper-multipath/0126-RHBZ-1211383-alias-collision.patch
+Patch127: SOURCES/device-mapper-multipath/0127-RHBZ-1201030-use-blk-availability.patch
+Patch128: SOURCES/device-mapper-multipath/0128-RHBZ-1222123-mpathconf-allow.patch
+Patch129: SOURCES/device-mapper-multipath/0129-UPBZ-1254292-iscsi-targetname.patch
+Patch130: SOURCES/device-mapper-multipath/0130-RHBZ-1259523-host_name_len.patch
+Patch131: SOURCES/device-mapper-multipath/0131-UPBZ-1259831-lock-retry.patch
+Patch132: SOURCES/device-mapper-multipath/0132-RHBZ-1296979-fix-define.patch
+Patch133: SOURCES/device-mapper-multipath/0133-RHBZ-1241774-sun-partition-numbering.patch
+Patch134: SOURCES/device-mapper-multipath/0134-RHBZ-1241528-check-mpath-prefix.patch
+Patch135: SOURCES/device-mapper-multipath/0135-RHBZ-1299600-path-dev-uevents.patch
+Patch136: SOURCES/device-mapper-multipath/0136-RHBZ-1304687-wait-for-map-add.patch
+Patch137: SOURCES/device-mapper-multipath/0137-RHBZ-1280524-clear-chkr-msg.patch
+Patch138: SOURCES/device-mapper-multipath/0138-RHBZ-1288660-fix-mpathconf-allow.patch
+Patch139: SOURCES/device-mapper-multipath/0139-RHBZ-1273173-queue-no-daemon-doc.patch
+Patch140: SOURCES/device-mapper-multipath/0140-RHBZ-1299647-fix-help.patch
+Patch141: SOURCES/device-mapper-multipath/0141-RHBZ-1303953-mpathpersist-typo.patch
+Patch142: SOURCES/device-mapper-multipath/0142-RHBZ-1283750-kpartx-fix.patch
+Patch143: SOURCES/device-mapper-multipath/0143-RHBZ-1299648-kpartx-sync.patch
+Patch144: SOURCES/device-mapper-multipath/0144-RHBZ-1299652-alua-pref-arg.patch
+Patch145: SOURCES/device-mapper-multipath/0145-UP-resize-help-msg.patch
+Patch146: SOURCES/device-mapper-multipath/0146-UPBZ-1299651-raw-output.patch
+Patch147: SOURCES/device-mapper-multipath/0147-RHBZ-1272620-fail-rm-msg.patch
+Patch148: SOURCES/device-mapper-multipath/0148-RHBZ-1292599-verify-before-remove.patch
+Patch149: SOURCES/device-mapper-multipath/0149-RHBZ-1292599-restore-removed-parts.patch
+Patch150: SOURCES/device-mapper-multipath/0150-RHBZ-1253913-fix-startup-msg.patch
+Patch151: SOURCES/device-mapper-multipath/0151-RHBZ-1297456-weighted-fix.patch
+Patch152: SOURCES/device-mapper-multipath/0152-RHBZ-1269293-fix-blk-unit-file.patch
+Patch153: SOURCES/device-mapper-multipath/0153-RH-fix-i686-size-bug.patch
+Patch154: SOURCES/device-mapper-multipath/0154-UPBZ-1291406-disable-reinstate.patch
+Patch155: SOURCES/device-mapper-multipath/0155-UPBZ-1300415-PURE-config.patch
+Patch156: SOURCES/device-mapper-multipath/0156-UPBZ-1313324-dont-fail-discovery.patch
+Patch157: SOURCES/device-mapper-multipath/0157-RHBZ-1319853-multipath-c-error-msg.patch
+Patch158: SOURCES/device-mapper-multipath/0158-RHBZ-1318581-timestamp-doc-fix.patch
+Patch159: SOURCES/device-mapper-multipath/0159-UPBZ-1255885-udev-waits.patch
+Patch160: SOURCES/device-mapper-multipath/0160-RH-udev-flags.patch
+Patch161: SOURCES/device-mapper-multipath/0161-RHBZ-1311659-no-kpartx.patch
+Patch162: SOURCES/device-mapper-multipath/0162-RHBZ-1333331-huawei-config.patch
+Patch163: SOURCES/device-mapper-multipath/0163-UPBZ-1333492-resize-map.patch
+Patch164: SOURCES/device-mapper-multipath/0164-RHBZ-1311463-dos-part-rollover.patch
+Patch165: SOURCES/device-mapper-multipath/0165-UPBZ-1341748-MSA-2040-conf.patch
+Patch166: SOURCES/device-mapper-multipath/0166-RHBZ-1323429-dont-allow-new-wwid.patch
+Patch167: SOURCES/device-mapper-multipath/0167-RHBZ-1335176-fix-show-cmds.patch
+Patch168: SOURCES/device-mapper-multipath/0168-RHBZ-1347769-shared-lock.patch
+Patch169: SOURCES/device-mapper-multipath/0169-UPBZ-1353357-json-output.patch
+Patch170: SOURCES/device-mapper-multipath/0170-UPBZ-1352925-fix-typo.patch
+Patch171: SOURCES/device-mapper-multipath/0171-UPBZ-1356651-allow-zero-size.patch
+Patch172: SOURCES/device-mapper-multipath/0172-RHBZ-1350931-no-active-add.patch
+Patch173: SOURCES/device-mapper-multipath/0173-RH-update-man-page.patch
+Patch174: SOURCES/device-mapper-multipath/0174-RHBZ-1362396-modprobe.patch
+Patch175: SOURCES/device-mapper-multipath/0175-RHBZ-1357382-ordering.patch
+Patch176: SOURCES/device-mapper-multipath/0176-RHBZ-1363830-fix-rename.patch
+Patch177: SOURCES/device-mapper-multipath/0177-libmultipath-correctly-initialize-pp-sg_id.patch
+Patch178: SOURCES/device-mapper-multipath/0178-libmultipath-add-rbd-discovery.patch
+Patch179: SOURCES/device-mapper-multipath/0179-multipath-tools-add-checker-callout-to-repair-path.patch
+Patch180: SOURCES/device-mapper-multipath/0180-multipath-tools-Add-rbd-checker.patch
+Patch181: SOURCES/device-mapper-multipath/0181-multipath-tools-Add-rbd-to-the-hwtable.patch
+Patch182: SOURCES/device-mapper-multipath/0182-multipath-tools-check-for-initialized-checker-before.patch
+Patch183: SOURCES/device-mapper-multipath/0183-multipathd-Don-t-call-repair-on-blacklisted-path.patch
+Patch184: SOURCES/device-mapper-multipath/0184-rbd-fix-sync-repair-support.patch
+Patch185: SOURCES/device-mapper-multipath/0185-rbd-check-for-nonshared-clients.patch
+Patch186: SOURCES/device-mapper-multipath/0186-rbd-check-for-exclusive-lock-enabled.patch
+Patch187: SOURCES/device-mapper-multipath/0187-rbd-fixup-log-messages.patch
+Patch188: SOURCES/device-mapper-multipath/0188-RHBZ-1368501-dont-exit.patch
+Patch189: SOURCES/device-mapper-multipath/0189-RHBZ-1368211-remove-retries.patch
+Patch190: SOURCES/device-mapper-multipath/0190-RHBZ-1380602-rbd-lock-on-read.patch
+Patch191: SOURCES/device-mapper-multipath/0191-RHBZ-1169168-disable-changed-paths.patch
+Patch192: SOURCES/device-mapper-multipath/0192-RHBZ-1362409-infinibox-config.patch
+Patch194: SOURCES/device-mapper-multipath/0194-RHBZ-1351964-kpartx-recurse.patch
+Patch195: SOURCES/device-mapper-multipath/0195-RHBZ-1359510-no-daemon-msg.patch
+Patch196: SOURCES/device-mapper-multipath/0196-RHBZ-1239173-dont-set-flag.patch
+Patch197: SOURCES/device-mapper-multipath/0197-RHBZ-1394059-max-sectors-kb.patch
+Patch198: SOURCES/device-mapper-multipath/0198-RHBZ-1372032-detect-path-checker.patch
+Patch199: SOURCES/device-mapper-multipath/0199-RHBZ-1279355-3pardata-config.patch
+Patch200: SOURCES/device-mapper-multipath/0200-RHBZ-1402092-orphan-status.patch
+Patch201: SOURCES/device-mapper-multipath/0201-RHBZ-1403552-silence-warning.patch
+Patch202: SOURCES/device-mapper-multipath/0202-RHBZ-1362120-skip-prio.patch
+Patch203: SOURCES/device-mapper-multipath/0203-RHBZ-1363718-add-msgs.patch
+Patch204: SOURCES/device-mapper-multipath/0204-RHBZ-1406226-nimble-config.patch
+Patch205: SOURCES/device-mapper-multipath/0205-RHBZ-1416569-reset-stats.patch
+Patch206: SOURCES/device-mapper-multipath/0206-RHBZ-1239173-pt2-no-paths.patch
+Patch207: SOURCES/device-mapper-multipath/0207-UP-add-libmpathcmd.patch
+Patch208: SOURCES/device-mapper-multipath/0208-UPBZ-1430097-multipathd-IPC-changes.patch
+Patch209: SOURCES/device-mapper-multipath/0209-UPBZ-1430097-multipath-C-API.patch
+Patch210: SOURCES/device-mapper-multipath/0210-RH-fix-uninstall.patch
+Patch211: SOURCES/device-mapper-multipath/0211-RH-strlen-fix.patch
+Patch212: SOURCES/device-mapper-multipath/0212-RHBZ-1431562-for-read-only.patch
+Patch213: SOURCES/device-mapper-multipath/0213-RHBZ-1430908-merge-dell-configs.patch
+Patch214: SOURCES/device-mapper-multipath/0214-RHBZ-1392115-set-paths-not-ready.patch
+Patch215: SOURCES/device-mapper-multipath/0215-RHBZ-1444194-fix-check-partitions.patch
+Patch216: SOURCES/device-mapper-multipath/0216-RHBZ-1448562-fix-reserve.patch
+Patch217: SOURCES/device-mapper-multipath/0217-RHBZ-1448576-3PAR-config.patch
+Patch218: SOURCES/device-mapper-multipath/0218-RHBZ-1459370-add-feature-fix.patch
+Patch219: SOURCES/device-mapper-multipath/0219-RHBZ-1448970-fix-resize.patch
+Patch220: SOURCES/device-mapper-multipath/0220-RHBZ-1448223-fix-kpartx.patch
+Patch221: SOURCES/device-mapper-multipath/0221-RH-harden-files.patch
+Patch222: SOURCES/device-mapper-multipath/0222-RHBZ-1457288-fix-show-maps-json.patch
+Patch223: SOURCES/device-mapper-multipath/0223-RHBZ-1452210-unpriv-sgio.patch
+Patch224: SOURCES/device-mapper-multipath/0224-RHBZ-1452210-prkey.patch
+Patch225: SOURCES/device-mapper-multipath/0225-RH-udevdir.patch
+Patch226: SOURCES/device-mapper-multipath/0226-RH-allow-overrides-section.patch
+Patch227: SOURCES/device-mapper-multipath/0227-RHBZ-1465773-fix-path-delay-msg.patch
+Patch228: SOURCES/device-mapper-multipath/0228-RHBZ-1464634-hauwei-config-update.patch
+Patch229: SOURCES/device-mapper-multipath/0229-RHBZ-1467987-poll-on-udev-monitor.patch
+Patch230: SOURCES/device-mapper-multipath/0230-UP-allow-invalid-creates.patch
+Patch231: SOURCES/device-mapper-multipath/0231-RHBZ-1458852-delay-readying.patch
+Patch232: SOURCES/device-mapper-multipath/0232-RHBZ-1456955-property-blacklist.patch
+Patch233: SOURCES/device-mapper-multipath/0233-RHBZ-1451852-1482629-nimble-config.patch
+Patch234: SOURCES/device-mapper-multipath/0234-RHBZ-1500109-doc-typo.patch
+Patch235: SOURCES/device-mapper-multipath/0235-RHBZ-1480638-NVMe-support.patch
+Patch236: SOURCES/device-mapper-multipath/0236-RHBZ-1525348-fix-msg.patch
+
+Patch237: revert-0103.patch
+Patch238: improve_error_handling_in_reconfigure.patch
+Patch239: restrict_should_multipath_success_conditions.patch
+Patch240: backport_21136f36a_Add-HP-MSA-2040-to-the-hardware-table.patch
+
+Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XSU/repos/device-mapper-multipath.centos/archive?at=imports%2Fc7%2Fdevice-mapper-multipath-0.4.9-119.el7&format=tar.gz#/device-mapper-multipath-0.4.9.centos.tar.gz) = 92c88ae02f688c9d1b21c23c7a046ad39415a1ad
+Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XS/repos/device-mapper-multipath.pg/archive?at=v1.0.0&format=tar#/device-mapper-multipath-v1.0.0.pg.tar) = b2e2f76d58e4c7e7c98b45943b49c4931fc4b789
+
+#Patch17: 0017-RH-fix-sigusr1.patch
 
 # runtime
 Requires: %{name}-libs = %{version}-%{release}
@@ -163,14 +271,12 @@ BuildRequires: libaio-devel, device-mapper-devel >= 1.02.89
 BuildRequires: libselinux-devel, libsepol-devel
 BuildRequires: readline-devel, ncurses-devel
 BuildRequires: systemd-units, systemd-devel
+BuildRequires: json-c-devel, perl, pkgconfig
+%ifarch x86_64
+BuildRequires: librados2-devel
+%endif
 
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
-
-# Citrix patches
-Patch2000: revert-0103.patch
-Patch2001: improve_error_handling_in_reconfigure.patch
-Patch2002: restrict_should_multipath_success_conditions.patch
-Patch2003: backport_21136f36a_Add-HP-MSA-2040-to-the-hardware-table.patch
 
 
 %description
@@ -181,16 +287,33 @@ The tools are :
 * multipathd - Detects when paths fail and execs multipath to update things.
 
 %package libs
+Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XSU/repos/device-mapper-multipath.centos/archive?at=imports%2Fc7%2Fdevice-mapper-multipath-0.4.9-119.el7&format=tar.gz#/device-mapper-multipath-0.4.9.centos.tar.gz) = 92c88ae02f688c9d1b21c23c7a046ad39415a1ad
+Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XS/repos/device-mapper-multipath.pg/archive?at=v1.0.0&format=tar#/device-mapper-multipath-v1.0.0.pg.tar) = b2e2f76d58e4c7e7c98b45943b49c4931fc4b789
 Summary: The %{name} modules and shared library
 License: GPL+
 Group: System Environment/Libraries
 
 %description libs
 The %{name}-libs provides the path checker
-and prioritizer modules. It also contains the multipath shared library,
+and prioritizer modules. It also contains the libmpathpersist and
+libmpathcmd shared libraries, as well as multipath's internal library,
 libmultipath.
 
+%package devel
+Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XSU/repos/device-mapper-multipath.centos/archive?at=imports%2Fc7%2Fdevice-mapper-multipath-0.4.9-119.el7&format=tar.gz#/device-mapper-multipath-0.4.9.centos.tar.gz) = 92c88ae02f688c9d1b21c23c7a046ad39415a1ad
+Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XS/repos/device-mapper-multipath.pg/archive?at=v1.0.0&format=tar#/device-mapper-multipath-v1.0.0.pg.tar) = b2e2f76d58e4c7e7c98b45943b49c4931fc4b789
+Summary: Development libraries and headers for %{name}
+Group: Development/Libraries
+Requires: %{name} = %{version}-%{release}
+Requires: %{name}-libs = %{version}-%{release}
+
+%description devel
+This package contains the files need to develop applications that use
+device-mapper-multipath's lbmpathpersist and libmpathcmd libraries.
+
 %package sysvinit
+Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XSU/repos/device-mapper-multipath.centos/archive?at=imports%2Fc7%2Fdevice-mapper-multipath-0.4.9-119.el7&format=tar.gz#/device-mapper-multipath-0.4.9.centos.tar.gz) = 92c88ae02f688c9d1b21c23c7a046ad39415a1ad
+Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XS/repos/device-mapper-multipath.pg/archive?at=v1.0.0&format=tar#/device-mapper-multipath-v1.0.0.pg.tar) = b2e2f76d58e4c7e7c98b45943b49c4931fc4b789
 Summary: SysV init script for device-mapper-multipath
 Group: System Environment/Libraries
 
@@ -199,162 +322,47 @@ SysV style init script for device-mapper-multipth. It needs to be
 installed only if systemd is not used as the system init process.
 
 %package -n kpartx
+Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XSU/repos/device-mapper-multipath.centos/archive?at=imports%2Fc7%2Fdevice-mapper-multipath-0.4.9-119.el7&format=tar.gz#/device-mapper-multipath-0.4.9.centos.tar.gz) = 92c88ae02f688c9d1b21c23c7a046ad39415a1ad
+Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XS/repos/device-mapper-multipath.pg/archive?at=v1.0.0&format=tar#/device-mapper-multipath-v1.0.0.pg.tar) = b2e2f76d58e4c7e7c98b45943b49c4931fc4b789
 Summary: Partition device manager for device-mapper devices
 Group: System Environment/Base
 
 %description -n kpartx
 kpartx manages partition creation and removal for device-mapper devices.
 
+%package -n libdmmp
+Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XSU/repos/device-mapper-multipath.centos/archive?at=imports%2Fc7%2Fdevice-mapper-multipath-0.4.9-119.el7&format=tar.gz#/device-mapper-multipath-0.4.9.centos.tar.gz) = 92c88ae02f688c9d1b21c23c7a046ad39415a1ad
+Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XS/repos/device-mapper-multipath.pg/archive?at=v1.0.0&format=tar#/device-mapper-multipath-v1.0.0.pg.tar) = b2e2f76d58e4c7e7c98b45943b49c4931fc4b789
+Summary: device-mapper-multipath C API library
+Group: System Environment/Libraries
+Requires: json-c
+Requires: %{name} = %{version}-%{release}
+Requires: %{name}-libs = %{version}-%{release}
+
+%description -n libdmmp
+This package contains the shared library for the device-mapper-multipath
+C API library.
+
+%package -n libdmmp-devel
+Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XSU/repos/device-mapper-multipath.centos/archive?at=imports%2Fc7%2Fdevice-mapper-multipath-0.4.9-119.el7&format=tar.gz#/device-mapper-multipath-0.4.9.centos.tar.gz) = 92c88ae02f688c9d1b21c23c7a046ad39415a1ad
+Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XS/repos/device-mapper-multipath.pg/archive?at=v1.0.0&format=tar#/device-mapper-multipath-v1.0.0.pg.tar) = b2e2f76d58e4c7e7c98b45943b49c4931fc4b789
+Summary: device-mapper-multipath C API library headers
+Group: Development/Libraries
+Requires: pkgconfig
+Requires: libdmmp = %{version}-%{release}
+
+%description -n libdmmp-devel
+This package contains the files needed to develop applications that use
+device-mapper-multipath's libdmmp C API library
+
 %prep
-%autosetup -p1 -N -n multipath-tools-130222
-%patch0001 -p1
-%patch0002 -p1
-%patch0003 -p1
-%patch0004 -p1
-%patch0005 -p1
-%patch0006 -p1
-%patch0007 -p1
-%patch0008 -p1
-%patch0009 -p1
-%patch0010 -p1
-%patch0011 -p1
-%patch0012 -p1
-%patch0013 -p1
-%patch0014 -p1
-%patch0015 -p1
-%patch0016 -p1
-# %%patch0017 -p1
-%patch0018 -p1
-%patch0019 -p1
-%patch0020 -p1
-%patch0021 -p1
-%patch0022 -p1
-%patch0023 -p1
-%patch0024 -p1
-%patch0025 -p1
-%patch0026 -p1
-%patch0027 -p1
-%patch0028 -p1
-%patch0029 -p1
-%patch0030 -p1
-%patch0031 -p1
-%patch0032 -p1
-%patch0033 -p1
-%patch0034 -p1
-%patch0035 -p1
-%patch0036 -p1
-%patch0037 -p1
-%patch0038 -p1
-%patch0039 -p1
-%patch0040 -p1
-%patch0041 -p1
-%patch0042 -p1
-%patch0043 -p1
-%patch0044 -p1
-%patch0045 -p1
-%patch0046 -p1
-%patch0047 -p1
-%patch0048 -p1
-%patch0049 -p1
-%patch0050 -p1
-%patch0051 -p1
-%patch0052 -p1
-%patch0053 -p1
-%patch0054 -p1
-%patch0055 -p1
-%patch0056 -p1
-%patch0057 -p1
-%patch0058 -p1
-%patch0059 -p1
-%patch0060 -p1
-%patch0061 -p1
-%patch0062 -p1
-%patch0063 -p1
-%patch0064 -p1
-%patch0065 -p1
-%patch0066 -p1
-%patch0067 -p1
-%patch0068 -p1
-%patch0069 -p1
-%patch0070 -p1
-%patch0071 -p1
-%patch0072 -p1
-%patch0073 -p1
-%patch0074 -p1
-%patch0075 -p1
-%patch0076 -p1
-%patch0077 -p1
-%patch0078 -p1
-%patch0079 -p1
-%patch0080 -p1
-%patch0081 -p1
-%patch0082 -p1
-%patch0083 -p1
-%patch0084 -p1
-%patch0085 -p1
-%patch0086 -p1
-%patch0087 -p1
-%patch0088 -p1
-%patch0089 -p1
-%patch0090 -p1
-%patch0091 -p1
-%patch0092 -p1
-%patch0093 -p1
-%patch0094 -p1
-%patch0095 -p1
-%patch0096 -p1
-%patch0097 -p1
-%patch0098 -p1
-%patch0099 -p1
-%patch0100 -p1
-%patch0101 -p1
-%patch0102 -p1
-%patch0103 -p1
-%patch0104 -p1
-%patch0105 -p1
-%patch0106 -p1
-%patch0107 -p1
-%patch0108 -p1
-%patch0109 -p1
-%patch0110 -p1
-%patch0111 -p1
-%patch0112 -p1
-%patch0113 -p1
-%patch0114 -p1
-%patch0115 -p1
-%patch0116 -p1
-%patch0117 -p1
-%patch0118 -p1
-%patch0119 -p1
-%patch0120 -p1
-%patch0121 -p1
-%patch0122 -p1
-%patch0123 -p1
-%patch0124 -p1
-%patch0125 -p1
-%patch0126 -p1
-%patch0127 -p1
-%patch0128 -p1
-%patch0129 -p1
-%patch0130 -p1
-%patch0131 -p1
-%patch0132 -p1
-%patch0133 -p1
-%patch0134 -p1
-%patch0135 -p1
-%patch0136 -p1
+%autosetup -p1
 cp %{SOURCE1} .
 
-%patch2000 -p1
-%patch2001 -p1
-%patch2002 -p1
-%patch2003 -p1
-
-
 %build
-%define _sbindir /usr/sbin
-%define _libdir /usr/%{_lib}
+%define _udevdir %{_prefix}/lib/udev/rules.d
 %define _libmpathdir %{_libdir}/multipath
+%define _pkgconfdir %{_libdir}/pkgconfig
 make %{?_smp_mflags} LIB=%{_lib}
 
 %install
@@ -366,7 +374,9 @@ make install \
 	syslibdir=%{_libdir} \
 	libdir=%{_libmpathdir} \
 	rcdir=%{_initrddir} \
-	unitdir=%{_unitdir}
+	unitdir=%{_unitdir} \
+	includedir=%{_includedir} \
+	pkgconfdir=%{_pkgconfdir}
 
 # tree fix up
 install -d %{buildroot}/etc/multipath
@@ -391,12 +401,6 @@ fi
 # section in multipathd.service from multi-user.target to sysinit.target
 /bin/systemctl --quiet is-enabled multipathd.service >/dev/null 2>&1 && /bin/systemctl reenable multipathd.service ||:
 
-%triggerun --  %{name} < 0.4.9-16
-%{_bindir}/systemd-sysv-convert --save multipathd >/dev/null 2>&1 ||: 
-bin/systemctl --no-reload enable multipathd.service >/dev/null 2>&1 ||:
-/sbin/chkconfig --del multipathd >/dev/null 2>&1 || :
-/bin/systemctl try-restart multipathd.service >/dev/null 2>&1 || :
-
 %triggerpostun -n %{name}-sysvinit -- %{name} < 0.4.9-16
 /sbin/chkconfig --add mdmonitor >/dev/null 2>&1 || :
 
@@ -407,15 +411,13 @@ bin/systemctl --no-reload enable multipathd.service >/dev/null 2>&1 ||:
 %{_sbindir}/mpathconf
 %{_sbindir}/mpathpersist
 %{_unitdir}/multipathd.service
-%{_mandir}/man3/mpath_persistent_reserve_in.3.gz
-%{_mandir}/man3/mpath_persistent_reserve_out.3.gz
 %{_mandir}/man5/multipath.conf.5.gz
 %{_mandir}/man8/multipath.8.gz
 %{_mandir}/man8/multipathd.8.gz
 %{_mandir}/man8/mpathconf.8.gz
 %{_mandir}/man8/mpathpersist.8.gz
-%config /usr/lib/udev/rules.d/62-multipath.rules
-%config /usr/lib/udev/rules.d/11-dm-mpath.rules
+%config %{_udevdir}/62-multipath.rules
+%config %{_udevdir}/11-dm-mpath.rules
 %doc AUTHOR COPYING FAQ
 %doc multipath.conf
 %dir /etc/multipath
@@ -425,14 +427,24 @@ bin/systemctl --no-reload enable multipathd.service >/dev/null 2>&1 ||:
 %doc AUTHOR COPYING
 %{_libdir}/libmultipath.so
 %{_libdir}/libmultipath.so.*
-%{_libdir}/libmpathpersist.so
 %{_libdir}/libmpathpersist.so.*
+%{_libdir}/libmpathcmd.so.*
 %dir %{_libmpathdir}
 %{_libmpathdir}/*
 
 %post libs -p /sbin/ldconfig
 
 %postun libs -p /sbin/ldconfig
+
+%files devel
+%defattr(-,root,root,-)
+%doc AUTHOR COPYING
+%{_libdir}/libmpathpersist.so
+%{_libdir}/libmpathcmd.so
+%{_includedir}/mpath_cmd.h
+%{_includedir}/mpath_persist.h
+%{_mandir}/man3/mpath_persistent_reserve_in.3.gz
+%{_mandir}/man3/mpath_persistent_reserve_out.3.gz
 
 %files sysvinit
 %{_initrddir}/multipathd
@@ -442,31 +454,393 @@ bin/systemctl --no-reload enable multipathd.service >/dev/null 2>&1 ||:
 %{_sbindir}/kpartx
 %{_mandir}/man8/kpartx.8.gz
 
+%files -n libdmmp
+%defattr(-,root,root,-)
+%doc AUTHOR COPYING
+%{_libdir}/libdmmp.so.*
+
+%post -n libdmmp -p /sbin/ldconfig
+
+%postun -n libdmmp -p /sbin/ldconfig
+
+%files -n libdmmp-devel
+%defattr(-,root,root,-)
+%doc AUTHOR COPYING
+%{_libdir}/libdmmp.so
+%dir %{_includedir}/libdmmp
+%{_includedir}/libdmmp/*
+%{_mandir}/man3/dmmp_*
+%{_mandir}/man3/libdmmp.h.3.gz
+%{_pkgconfdir}/libdmmp.pc
+
 %changelog
-* Mon May 16 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-85.5
-- Add 0136-RHBZ-1335746-clear-chkr-msg.patch
-  * clear old checker message for offline paths.
-- Resolves: bz #1335746
+* Wed Jan 31 2018 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-119
+- Add 0236-RHBZ-1525348-fix-msg.patch
+  * reduced message serverity level
+- Resolves: bz #1525348
 
-* Wed Apr 27 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-85.4
-- Add 0135-RHBZ-1330480-kpartx-sync.patch
-  * default to using udev sync mode
-- Resolves: bz #1330480
+* Fri Nov 17 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-118
+- Modify 0224-RHBZ-1452210-prkey.patch
+  * Improve error checking for mpathpersist
+- Resolves: bz #1452210
 
-* Tue Apr 19 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-85.3
-- Add 0134-UPBZ-1328515-dont-fail-discovery.patch
+* Thu Nov 16 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-117
+- Modify 0235-RHBZ-1480638-NVMe-support.patch
+  * remove overly-restrictive uevent filtering
+- Resolves: bz #1480638
+
+* Tue Oct 31 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-116
+- Add 0235-RHBZ-1480638-NVMe-support.patch
+  * adds support for multipathing NVMe devices
+- Resolves: bz #1480638
+
+* Tue Oct 10 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-115
+- Add 0233-RHBZ-1451852-1482629-nimble-config.patch
+- Add 0234-RHBZ-1500109-doc-typo.patch
+- Remove old triggerun scriptlet (bz1470384)
+- Resolves: bz #1451852, #1470384, #1482629, #1500109
+
+* Tue Oct  3 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-114
+- Add 0226-RH-allow-overrides-section.patch
+  * This is a dummy section that exists to help the transition to RHEL8
+- Add 0227-RHBZ-1465773-fix-path-delay-msg.patch
+- Add 0228-RHBZ-1464634-hauwei-config-update.patch
+- Add 0229-RHBZ-1467987-poll-on-udev-monitor.patch
+  * Do poll first, so udev_monitor_receive_device doesn't return error when
+    there is no uevent
+- Add 0230-UP-allow-invalid-creates.patch
+  * Allow creation of devices with no valid paths.
+- Add 0231-RHBZ-1458852-delay-readying.patch
+  * Add ghost_delay configuration option to delay device activation when only
+    ghost paths exist.
+- Add 0232-RHBZ-1456955-property-blacklist.patch
+  * Add the "property" blacklist type.
+- Resolves: bz #1456955, #1458852, #1464634, #1465773, #1467987
+
+* Wed Sep 20 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-113
+- Modify 0224-RHBZ-1452210-prkey.patch
+  * fix errow with telling multipathd to set prkeys
+- Add 0225-RH-udevdir.patch
+  * fix rpmdiff complaint about udev rules installation
+- Resolves: bz #1452210
+
+* Tue Sep 19 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-112
+- Modify 0191-RHBZ-1169168-disable-changed-paths.patch
+  * man page fixup
+- Modfiy 0197-RHBZ-1394059-max-sectors-kb.patch
+  * man page fixup
+- Modify 0205-RHBZ-1416569-reset-stats.patch
+  * man page fixup
+- Add 0218-RHBZ-1459370-add-feature-fix.patch
+  * handle null feature string
+- Add 0219-RHBZ-1448970-fix-resize.patch
+  * if the resize fails, try to resume again with the old table.
+- Add 0220-RHBZ-1448223-fix-kpartx.patch
+  * gracefully fail when run on something other than a file or block device
+- Add 0221-RH-harden-files.patch
+  * change build parameters to use position independent code
+- Add 0222-RHBZ-1457288-fix-show-maps-json.patch
+  * handle running "show maps json" with no multipath devices present
+- Add 0223-RHBZ-1452210-unpriv-sgio.patch
+  * add unpriv_sgio configuration option to set unpriv_sgio on multipath device
+    and paths
+- Add 0224-RHBZ-1452210-prkey.patch
+  * allow setting reservation_key to "file" to set and read keys from
+    prkey_file. Also add new multipathd commands to modify the prkey file.
+- Resolves: bz #1459370, #1448970, #1448223, #1457288, #1452210
+
+* Mon May 15 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-111
+- Remove 0217-RHBZ-1437329-blacklist-oracle-devs.patch
+  * Incorrect change, and the bug is already fixed.
+- Move 0218-RHBZ-1448576-3PAR-config.patch to
+  0217-RHBZ-1448576-3PAR-config.patch
+- Resolves: bz #1448576
+
+* Fri May 12 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-110
+- Add 0215-RHBZ-1444194-fix-check-partitions.patch
+  * make sure kpartx partions match the correct device
+- Add 0216-RHBZ-1448562-fix-reserve.patch
+  * don't join threads that haven't been created
+- Add 0217-RHBZ-1437329-blacklist-oracle-devs.patch
+  * blacklist db2.* devices
+- Add 0218-RHBZ-1448576-3PAR-config.patch
+- Resolves: bz #1444194, #1448562, #1437329, #1448576
+
+* Tue Apr 25 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-109
+- Add 0214-RHBZ-1392115-set-paths-not-ready.patch
+  * Set ENV{SYSTEMD_READY}="0" on multipath path devices
+- Resolves: bz #1392115
+
+* Tue Apr 25 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-108
+- Add 0213-RHBZ-1430908-merge-dell-configs.patch
+- Resolves: bz #1430908
+
+* Mon Apr  3 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-107
+- Modify 0197-RHBZ-1394059-max-sectors-kb.patch
+  * Make multipath only change max_sectors_kb on creates. On reloads, it
+    just makes sure the new path matches the multipath device.
+- Refresh 0198-RHBZ-1372032-detect-path-checker.patch
+- Refresh 0201-RHBZ-1403552-silence-warning.patch
+- Refresh 0206-RHBZ-1239173-pt2-no-paths.patch
+- Refresh 0207-UP-add-libmpathcmd.patch
+- Refresh 0212-RHBZ-1431562-for-read-only.patch
+- Resolves: bz #1394059
+
+
+* Fri Mar 24 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-106
+- Add 0212-RHBZ-1431562-for-read-only.patch
+- Resolves: bz #1431562
+
+* Fri Mar 10 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-105
+- fix specfile issue
+- Related: bz #1430097
+
+* Thu Mar  9 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-104
+- Change _pkgconfdir from /usr/share/pkgconfig to /usr/lib/pkgconfig
+- Modify 0209-UPBZ-1430097-multipath-C-API.patch
+  * change _pkgconfdir and fixed double-closing fd
+- Add 0211-RH-strlen-fix.patch
+  * checks that variables are not NULL before passing them to strlen
+- Related: bz #1430097
+
+* Thu Mar  9 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-103
+- Add more explicit Requires to subpackages to make rpmdiff happy
+- Related: bz #1430097
+
+* Tue Mar  7 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-102
+- Add 0207-UP-add-libmpathcmd.patch
+  * New shared library, libmpathcmd, that sends and receives messages from
+    multipathd. device-mapper-multipath now uses this library internally.
+- Add 0208-UPBZ-1430097-multipathd-IPC-changes.patch
+  * validation that modifying commands are coming from root.
+- Add 0209-UPBZ-1430097-multipath-C-API.patch
+  * New shared library. libdmmp, that presents the information from multipathd
+    in a structured manner to make it easier for callers to use
+- Add 0210-RH-fix-uninstall.patch
+  * Minor compilation fixes
+- Make 3 new subpackages
+  * device-mapper-multipath-devel, libdmmp, and libdmmp-devel. libmpathcmd
+    and libmpathprio are in device-mapper-multipath-libs and
+    device-mapper-multipath-devel. libdmmp is in its own subpackages
+- Move libmpathprio devel files to device-mapper-multipath-devel
+- Resolves: bz #1430097
+
+* Wed Feb 15 2017 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-101
+- Modify 0166-RHBZ-1323429-dont-allow-new-wwid.patch
+  * change print message
+- Add 0191-RHBZ-1169168-disable-changed-paths.patch
+  * add "disabled_changed_wwids" multipath.conf parameter to disable
+    paths whose wwid changes
+- Add 0192-RHBZ-1362409-infinibox-config.patch
+- Add 0194-RHBZ-1351964-kpartx-recurse.patch
+  * fix recursion on corrupt dos partitions
+- Add 0195-RHBZ-1359510-no-daemon-msg.patch
+  * print a messages when multipathd isn't running
+- Add 0196-RHBZ-1239173-dont-set-flag.patch
+  * don't set reload flag on reloads when you gain your first
+    valid path
+- Add 0197-RHBZ-1394059-max-sectors-kb.patch
+  * add "max_sectors_kb" multipath.conf parameter to set max_sectors_kb
+    on a multipath device and all its path devices
+- Add 0198-RHBZ-1372032-detect-path-checker.patch
+  * add "detect_checker" multipath.conf parameter to detect ALUA arrays
+    and set the path checker to TUR
+- Add 0199-RHBZ-1279355-3pardata-config.patch
+- Add 0200-RHBZ-1402092-orphan-status.patch
+  * clear status on orphan paths
+- Add 0201-RHBZ-1403552-silence-warning.patch
+- Add 0202-RHBZ-1362120-skip-prio.patch
+  * don't run prio on failed paths
+- Add 0203-RHBZ-1363718-add-msgs.patch
+- Add 0204-RHBZ-1406226-nimble-config.patch
+- Add 0205-RHBZ-1416569-reset-stats.patch
+  * add "reset maps stats" and "reset map <map> stats" multipathd
+    interactive commands to reset the stats tracked by multipathd
+- Add 0206-RHBZ-1239173-pt2-no-paths.patch
+  * make multipath correctly disable scanning and rules running when
+    it gets a uevent and there are not valid paths.
+- Resolves: bz #1169168, #1239173, #1279355, #1359510, #1362120, #1362409
+- Resolves: bz #1363718, #1394059, #1351964, #1372032, #1402092, #1403552
+- Resolves: bz #1406226, #1416569
+
+* Wed Sep  7 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-100
+- Add 0189-RHBZ-1368211-remove-retries.patch
+  * add "remove_retries" multipath.conf parameter to make multiple attempts
+    to remove a multipath device if it is busy.
+- Add 0190-RHBZ-1380602-rbd-lock-on-read.patch
+  * pass lock_on_read when remapping image
+- Resolves: bz #1368211, #1380602
+
+* Wed Sep  7 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-99
+- Add 0188-RHBZ-1368501-dont-exit.patch
+  * make multipathd not exit if it encounters recoverable errors on startup
+- Resolves: bz #1368501
+
+* Thu Sep  1 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-98
+- Modified 0180-multipath-tools-Add-rbd-checker.patch
+  * make the rbd path checker only compile if librados2-devel is installed
+- Make librados2-devel only be BuildRequired on x86_64
+- Resolves: bz #1348372
+
+* Thu Sep  1 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-97
+- Add 0177-libmultipath-correctly-initialize-pp-sg_id.patch
+  * This and all the following patches add the rbd patch checker
+- Add 0178-libmultipath-add-rbd-discovery.patch
+- Add 0179-multipath-tools-add-checker-callout-to-repair-path.patch
+- Add 0180-multipath-tools-Add-rbd-checker.patch
+- Add 0181-multipath-tools-Add-rbd-to-the-hwtable.patch
+- Add 0182-multipath-tools-check-for-initialized-checker-before.patch
+- Add 0183-multipathd-Don-t-call-repair-on-blacklisted-path.patch
+- Add 0184-rbd-fix-sync-repair-support.patch
+- Add 0185-rbd-check-for-nonshared-clients.patch
+- Add 0186-rbd-check-for-exclusive-lock-enabled.patch
+- Add 0187-rbd-fixup-log-messages.patch
+- Added BuildRequires on librados2-devel
+- Resolves: bz #1348372
+
+
+* Mon Aug  8 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-96
+- Modify 0136-RHBZ-1304687-wait-for-map-add.patch
+  * change missing_uev_msg_delay to missing_uev_msg_timeout, and make
+    multipathd re-enable table loads if the timeout has passed
+- Refresh 0137-RHBZ-1280524-clear-chkr-msg.patch
+- Refresh 0139-RHBZ-1273173-queue-no-daemon-doc.patch
+- Refresh 0150-RHBZ-1253913-fix-startup-msg.patch
+- Refresh 0154-UPBZ-1291406-disable-reinstate.patch
+- Refresh 0155-UPBZ-1300415-PURE-config.patch
+- Refresh 0156-UPBZ-1313324-dont-fail-discovery.patch
+- Refresh 0161-RHBZ-1311659-no-kpartx.patch
+- Refresh 0167-RHBZ-1335176-fix-show-cmds.patch
+- Add 0173-RH-update-man-page.patch
+- Add 0174-RHBZ-1362396-modprobe.patch
+  * make starting the multipathd service modprobe dm-multipath in the
+    sysvinit scripts
+- Add 0175-RHBZ-1357382-ordering.patch
+  * force multipathd.service to start after systemd-udev-trigger.service
+- Add 0176-RHBZ-1363830-fix-rename.patch
+  * initialized a variable to make dm_rename not fail randomly
+- Resolves: bz #1304687, #1362396, #1357382, #1363830
+
+* Wed Jul 20 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-95
+- Add 0170-UPBZ-1352925-fix-typo.patch
+- Add 0171-UPBZ-1356651-allow-zero-size.patch
+  * Allow zero-sized paths to be added to a multipath device
+- Add 0172-RHBZ-1350931-no-active-add.patch
+  * Allow paths to be added to a new map if no active paths exist. Also
+    fixes 1351430
+- Resolves: bz #1350931, #1351430, #1352925, #1356651
+
+
+* Mon Jul 18 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-94
+- Modify 0169-UPBZ-1353357-json-output.patch
+  * Add manpage documentation
+- Resolves: bz #1353357
+
+* Fri Jul 15 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-93
+- Modify 0135-RHBZ-1299600-path-dev-uevents.patch
+  * trigger uevents when adding wwids for existing devices during startup
+- Refresh 0136-RHBZ-1304687-wait-for-map-add.patch
+- Refresh 0150-RHBZ-1253913-fix-startup-msg.patch
+- Add 0168-RHBZ-1347769-shared-lock.patch
+  * make multipath lock the path devices with a shared lock
+- Add 0169-UPBZ-1353357-json-output.patch
+  * add mulitpathd json output command
+- Resolves: bz #1299600, #1347769, #1353357
+
+* Tue Jul  5 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-92
+- Add 0166-RHBZ-1323429-dont-allow-new-wwid.patch
+  * don't allow path wwid to change while it is in use
+- Add 0167-RHBZ-1335176-fix-show-cmds.patch
+  * and new show multipath format wildcard, 'f' to sho number of failures.
+    This will hopefully be useful for tracking what happens to multipath
+    devices for bz #1335176
+- Resolves: bz #1323429
+
+* Thu Jun  2 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-91
+- Add 0165-UPBZ-1341748-MSA-2040-conf.patch
+  * Add default config for MSA 2040 array
+- Resolves: bz #1341748
+
+* Wed Jun  1 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-90
+- Modify 0159-UPBZ-1255885-udev-waits.patch
+  * fix bug in failure path
+- Add 0160-RH-udev-flags.patch
+- Add 0161-RHBZ-1311659-no-kpartx.patch
+  * skip_kpartx option disables kpartx running on multipath devices
+- Add 0162-RHBZ-1333331-huawei-config.patch
+  * Add default config for Huawei XSG1 array
+- Add 0163-UPBZ-1333492-resize-map.patch
+  * restore old size if resize fails
+- Add 0164-RHBZ-1311463-dos-part-rollover.patch
+  * fix incorrect partition size due to 4k device size rollover
+- Resolves: bz #1255885, #1311463, #1311659, #1333331, #1333492
+
+* Wed Apr 20 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-89
+- Modify 0151-RHBZ-1297456-weighted-fix.patch
+  * add documentation
+- Add 0157-RHBZ-1319853-multipath-c-error-msg.patch
+  * better error reporting for multipath -c
+- Add 0158-RHBZ-1318581-timestamp-doc-fix.patch
+  * add documentation for -T
+- Add 0159-UPBZ-1255885-udev-waits.patch
+  * make multipath and kpartx wait after for udev after each command
+- Resolves: bz #1297456, #1319853, #1318581, #1255885
+
+* Tue Mar 29 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-88
+- Add 0151-RHBZ-1297456-weighted-fix.patch
+  * add wwn keyword to weighted prioritizer for persistent naming
+- Add 0152-RHBZ-1269293-fix-blk-unit-file.patch
+  * use "Wants" instead of "Requires"
+- Add 0153-RH-fix-i686-size-bug.patch
+  * use 64-bit keycodes for multipathd client commands
+- Add 0154-UPBZ-1291406-disable-reinstate.patch
+  * don't automatically reinstate ghost paths for implicit alua devices
+- Add 0155-UPBZ-1300415-PURE-config.patch
+  * Add default config for PURE FlashArray
+- Add 0156-UPBZ-1313324-dont-fail-discovery.patch
   * don't fail discovery because individual paths failed.
-- Resolves: bz #1328515
+- Resolves: bz #1297456, #1269293, #1291406, #1300415, #1313324
 
-* Mon Mar 28 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-85.2
-- Add 0133-RHBZ-1321019-wait-for-map-add.patch
+* Fri Feb 26 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-87
+- Add 0133-RHBZ-1241774-sun-partition-numbering.patch
+  * makr kpartx device numbers match partition numbers
+- Add 0134-RHBZ-1241528-check-mpath-prefix.patch
+  * only touch devices with a "mpath-" dm uuid prefix
+- Add 0135-RHBZ-1299600-path-dev-uevents.patch
+  * trigger path uevent the first time a path is claimed by multipath
+- Add 0136-RHBZ-1304687-wait-for-map-add.patch
   * wait for the device to finish being added before reloading it.
-- Resolves: bz #1321019
+- Add 0137-RHBZ-1280524-clear-chkr-msg.patch
+- Add 0138-RHBZ-1288660-fix-mpathconf-allow.patch
+  * don't remove existing lines from blacklist_exceptions section
+- Add 0139-RHBZ-1273173-queue-no-daemon-doc.patch
+- Add 0140-RHBZ-1299647-fix-help.patch
+- Add 0141-RHBZ-1303953-mpathpersist-typo.patch
+- Add 0142-RHBZ-1283750-kpartx-fix.patch
+  * only remove devices if their uuid says that they are the correct
+    partition device
+- Add 0143-RHBZ-1299648-kpartx-sync.patch
+  * default to using udev sync mode
+- Add 0144-RHBZ-1299652-alua-pref-arg.patch
+  * allow "exclusive_pref_bit" argument to alua prioritizer
+- Add 0145-UP-resize-help-msg.patch
+- Add 0146-UPBZ-1299651-raw-output.patch
+  * allow raw format mutipathd show commands, that remove headers and padding
+- Add 0147-RHBZ-1272620-fail-rm-msg.patch
+- Add 0148-RHBZ-1292599-verify-before-remove.patch
+  * verify that all partitions are unused before attempting to remove a device
+- Add 0149-RHBZ-1292599-restore-removed-parts.patch
+  * don't disable kpartx when restoring the first path of a device.
+- Add 0150-RHBZ-1253913-fix-startup-msg.patch
+  * wait for multipathd daemon to write pidfile before returning
+- Resolves: bz #1241528, #1241774, #1253913, #1272620, #1273173, #1280524
+- Resolves: bz #1283750, #1288660, #1292599, #1299600, #1299647, #1299648
+- Resolves: bz #1299651, #1299652, #1303953, #1304687
 
-* Mon Feb 01 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-85.1
+* Wed Jan 27 2016 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-86
 - Add 0132-RHBZ-1296979-fix-define.patch
   * look for the correct libudev function to set define
-- Resolves: bz #1303623
+- Resolves: bz # 1296979
 
 * Thu Sep 17 2015 Benjamin Marzinski <bmarzins@redhat.com> 0.4.9-85
 - Fix device-mapper Requires line in spec file

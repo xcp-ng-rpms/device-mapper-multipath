@@ -1,0 +1,64 @@
+---
+ libmultipath/dict.c |   42 ++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 42 insertions(+)
+
+Index: multipath-tools-130222/libmultipath/dict.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/dict.c
++++ multipath-tools-130222/libmultipath/dict.c
+@@ -3721,6 +3721,18 @@ snprint_bled_product (char * buff, int l
+ 
+ #define __deprecated
+ 
++static int
++nop_handler(vector strvec)
++{
++	return 0;
++}
++
++static int
++snprint_nop(char * buff, int len, void * data)
++{
++	return 0;
++}
++
+ void
+ init_keywords(void)
+ {
+@@ -3853,6 +3865,36 @@ init_keywords(void)
+ 	install_keyword("unpriv_sgio", &hw_unpriv_sgio_handler, &snprint_hw_unpriv_sgio);
+ 	install_sublevel_end();
+ 
++	install_keyword_root("overrides", &nop_handler);
++	install_keyword("path_grouping_policy", &nop_handler, &snprint_nop);
++	install_keyword("uid_attribute", &nop_handler, &snprint_nop);
++	install_keyword("path_selector", &nop_handler, &snprint_nop);
++	install_keyword("path_checker", &nop_handler, &snprint_nop);
++	install_keyword("checker", &nop_handler, &snprint_nop);
++	install_keyword("alias_prefix", &nop_handler, &snprint_nop);
++	install_keyword("features", &nop_handler, &snprint_nop);
++	install_keyword("hardware_handler", &nop_handler, &snprint_nop);
++	install_keyword("prio", &nop_handler, &snprint_nop);
++	install_keyword("prio_args", &nop_handler, &snprint_nop);
++	install_keyword("failback", &nop_handler, &snprint_nop);
++	install_keyword("rr_weight", &nop_handler, &snprint_nop);
++	install_keyword("no_path_retry", &nop_handler, &snprint_nop);
++	install_keyword("rr_min_io", &nop_handler, &snprint_nop);
++	install_keyword("rr_min_io_rq", &nop_handler, &snprint_nop);
++	install_keyword("pg_timeout", &nop_handler, &snprint_nop);
++	install_keyword("flush_on_last_del", &nop_handler, &snprint_nop);
++	install_keyword("fast_io_fail_tmo", &nop_handler, &snprint_nop);
++	install_keyword("dev_loss_tmo", &nop_handler, &snprint_nop);
++	install_keyword("user_friendly_names", &nop_handler, &snprint_nop);
++	install_keyword("retain_attached_hw_handler", &nop_handler, &snprint_nop);
++	install_keyword("detect_prio", &nop_handler, &snprint_nop);
++	install_keyword("detect_path_checker", &nop_handler, &snprint_nop);
++	install_keyword("deferred_remove", &nop_handler, &snprint_nop);
++	install_keyword("delay_watch_checks", &nop_handler, &snprint_nop);
++	install_keyword("delay_wait_checks", &nop_handler, &snprint_nop);
++	install_keyword("skip_kpartx", &nop_handler, &snprint_nop);
++	install_keyword("max_sectors_kb", &nop_handler, &snprint_nop);
++
+ 	install_keyword_root("multipaths", &multipaths_handler);
+ 	install_keyword_multi("multipath", &multipath_handler, NULL);
+ 	install_sublevel();

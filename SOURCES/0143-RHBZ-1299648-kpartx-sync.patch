@@ -3,10 +3,10 @@
  multipath/multipath.rules |    2 +-
  2 files changed, 8 insertions(+), 4 deletions(-)
 
-Index: multipath-bz1330480/kpartx/kpartx.c
+Index: multipath-tools-130222/kpartx/kpartx.c
 ===================================================================
---- multipath-bz1330480.orig/kpartx/kpartx.c
-+++ multipath-bz1330480/kpartx/kpartx.c
+--- multipath-tools-130222.orig/kpartx/kpartx.c
++++ multipath-tools-130222/kpartx/kpartx.c
 @@ -57,7 +57,7 @@ struct pt {
  } pts[MAXTYPES];
  
@@ -35,7 +35,7 @@ Index: multipath-bz1330480/kpartx/kpartx.c
  	return 1;
  }
  
-@@ -270,6 +271,9 @@ main(int argc, char **argv){
+@@ -285,6 +286,9 @@ main(int argc, char **argv){
  		case 's':
  			udev_sync = 1;
  			break;
@@ -45,10 +45,10 @@ Index: multipath-bz1330480/kpartx/kpartx.c
  		case 'u':
  			what = UPDATE;
  			break;
-Index: multipath-bz1330480/multipath/multipath.rules
+Index: multipath-tools-130222/multipath/multipath.rules
 ===================================================================
---- multipath-bz1330480.orig/multipath/multipath.rules
-+++ multipath-bz1330480/multipath/multipath.rules
+--- multipath-tools-130222.orig/multipath/multipath.rules
++++ multipath-tools-130222/multipath/multipath.rules
 @@ -48,6 +48,6 @@ ENV{DM_ACTIVATION}=="1", ENV{DM_MULTIPAT
  ENV{DM_SUSPENDED}=="1", GOTO="end_mpath"
  ENV{DM_ACTION}=="PATH_FAILED", GOTO="end_mpath"

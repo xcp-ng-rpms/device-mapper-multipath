@@ -1,0 +1,20 @@
+---
+ libmultipath/hwtable.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+Index: multipath-tools-130222/libmultipath/hwtable.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/hwtable.c
++++ multipath-tools-130222/libmultipath/hwtable.c
+@@ -1125,9 +1125,10 @@ static struct hwentry default_hw[] = {
+ 		.prio_name     = PRIO_ALUA,
+ 		.prio_args     = NULL,
+ 		.pgfailback    = -FAILBACK_IMMEDIATE,
++		.checker_name  = TUR,
+ 		.selector      = "round-robin 0",
+ 		.dev_loss      = MAX_DEV_LOSS_TMO,
+-		.fast_io_fail  = 1,
++		.fast_io_fail  = 5,
+ 	},
+ 	{
+ 		.vendor        = "XtremIO",

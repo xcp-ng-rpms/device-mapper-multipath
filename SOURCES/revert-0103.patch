@@ -10,13 +10,13 @@ To work around this, revert this patch which somehow prevents multipathd
 from later recreating the multipath device.
 
 diff --git a/multipath/multipath.rules b/multipath/multipath.rules
-index bca3510..f10fa8f 100644
+index ae51b2d..258ac3a 100644
 --- a/multipath/multipath.rules
 +++ b/multipath/multipath.rules
-@@ -47,7 +47,7 @@ ENV{DM_UUID}!="mpath-?*", GOTO="end_mpath"
- ENV{DM_ACTIVATION}=="1", ENV{DM_MULTIPATH_NEED_KPARTX}="1"
+@@ -56,7 +56,7 @@ ENV{DM_ACTIVATION}=="1", ENV{DM_MULTIPATH_NEED_KPARTX}="1"
  ENV{DM_SUSPENDED}=="1", GOTO="end_mpath"
  ENV{DM_ACTION}=="PATH_FAILED", GOTO="end_mpath"
+ ENV{DM_NOSCAN}=="1", GOTO="end_mpath"
 -ENV{DM_ACTIVATION}!="1", ENV{DM_MULTIPATH_NEED_KPARTX}!="1", GOTO="end_mpath"
 +#ENV{DM_ACTIVATION}!="1", ENV{DM_MULTIPATH_NEED_KPARTX}!="1", GOTO="end_mpath"
  RUN+="$env{MPATH_SBIN_PATH}/kpartx -an $tempnode", \

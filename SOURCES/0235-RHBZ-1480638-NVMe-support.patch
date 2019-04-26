@@ -1,0 +1,503 @@
+---
+ libmultipath/checkers.c    |   19 +++-
+ libmultipath/checkers.h    |    3 
+ libmultipath/discovery.c   |  183 +++++++++++++++++++++++++++++++++++++++------
+ libmultipath/discovery.h   |    2 
+ libmultipath/hwtable.c     |   10 ++
+ libmultipath/structs.h     |    1 
+ libmultipath/uevent.c      |    2 
+ multipath/multipath.conf.5 |    3 
+ multipathd/main.c          |   27 ------
+ 9 files changed, 194 insertions(+), 56 deletions(-)
+
+Index: multipath-tools-130222/libmultipath/discovery.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/discovery.c
++++ multipath-tools-130222/libmultipath/discovery.c
+@@ -13,6 +13,7 @@
+ #include <libgen.h>
+ #include <libudev.h>
+ #include <libdevmapper.h>
++#include <ctype.h>
+ 
+ #include "checkers.h"
+ #include "vector.h"
+@@ -881,6 +882,46 @@ scsi_sysfs_pathinfo (struct path * pp)
+ }
+ 
+ static int
++nvme_sysfs_pathinfo (struct path * pp)
++{
++	struct udev_device *parent;
++	const char *attr_path = NULL;
++
++
++	attr_path = udev_device_get_sysname(pp->udev);
++	if (!attr_path)
++		return 1;
++
++	if (sscanf(attr_path, "nvme%dn%d",
++		   &pp->sg_id.host_no,
++		   &pp->sg_id.scsi_id) != 2)
++		return 1;
++	pp->sg_id.channel = 0;
++	pp->sg_id.lun = 0;
++
++	parent = udev_device_get_parent(pp->udev);
++	if (!parent)
++		return 1;
++
++	snprintf(pp->vendor_id, SCSI_VENDOR_SIZE, "NVME");
++	snprintf(pp->product_id, SCSI_PRODUCT_SIZE, "%s",
++		 udev_device_get_sysattr_value(parent, "model"));
++	snprintf(pp->serial, SERIAL_SIZE, "%s",
++		 udev_device_get_sysattr_value(parent, "serial"));
++	snprintf(pp->rev, SCSI_REV_SIZE, "%s",
++		 udev_device_get_sysattr_value(parent, "firmware_rev"));
++
++	condlog(3, "%s: vendor = %s", pp->dev, pp->vendor_id);
++	condlog(3, "%s: product = %s", pp->dev, pp->product_id);
++	condlog(3, "%s: serial = %s", pp->dev, pp->serial);
++	condlog(3, "%s: rev = %s", pp->dev, pp->rev);
++
++	pp->hwe = find_hwe(conf->hwtable, pp->vendor_id, pp->product_id, NULL);
++
++	return 0;
++}
++
++static int
+ rbd_sysfs_pathinfo (struct path * pp)
+ {
+ 	sprintf(pp->vendor_id, "Ceph");
+@@ -1040,14 +1081,20 @@ path_offline (struct path * pp)
+ {
+ 	struct udev_device * parent;
+ 	char buff[SCSI_STATE_SIZE];
++	const char *subsys_type;
+ 
+-	if (pp->bus != SYSFS_BUS_SCSI)
++	if (pp->bus == SYSFS_BUS_SCSI)
++		subsys_type = "scsi";
++	else if (pp->bus == SYSFS_BUS_NVME)
++		subsys_type = "nvme";
++	else
+ 		return PATH_UP;
+ 
+ 	parent = pp->udev;
+ 	while (parent) {
+ 		const char *subsys = udev_device_get_subsystem(parent);
+-		if (subsys && !strncmp(subsys, "scsi", 4))
++		if (subsys && !strncmp(subsys, subsys_type,
++		    		       strlen(subsys_type)))
+ 			break;
+ 		parent = udev_device_get_parent(parent);
+ 	}
+@@ -1063,15 +1110,30 @@ path_offline (struct path * pp)
+ 
+ 	condlog(3, "%s: path state = %s", pp->dev, buff);
+ 
+-	if (!strncmp(buff, "offline", 7)) {
+-		pp->offline = 1;
+-		return PATH_DOWN;
++	if (pp->bus == SYSFS_BUS_SCSI) {
++		if (!strncmp(buff, "offline", 7)) {
++			pp->offline = 1;
++			return PATH_DOWN;
++		}
++		pp->offline = 0;
++		if (!strncmp(buff, "blocked", 7) ||
++		    !strncmp(buff, "quiesce", 7))
++			return PATH_PENDING;
++		else if (!strncmp(buff, "running", 7))
++			return PATH_UP;
++	}
++	else if (pp->bus == SYSFS_BUS_NVME) {
++		if (!strncmp(buff, "dead", 4)) {
++			pp->offline = 1;
++			return PATH_DOWN;
++		}
++		pp->offline = 0;
++		if (!strncmp(buff, "new", 3) ||
++		    !strncmp(buff, "deleting", 8))
++			return PATH_PENDING;
++		else if (!strncmp(buff, "live", 4))
++			return PATH_UP;
+ 	}
+-	pp->offline = 0;
+-	if (!strncmp(buff, "blocked", 7) || !strncmp(buff, "quiesce", 7))
+-		return PATH_PENDING;
+-	else if (!strncmp(buff, "running", 7))
+-		return PATH_UP;
+ 
+ 	return PATH_DOWN;
+ }
+@@ -1091,6 +1153,8 @@ sysfs_pathinfo(struct path * pp)
+ 		pp->bus = SYSFS_BUS_SCSI;
+ 	if (!strncmp(pp->dev,"rbd", 3))
+ 		pp->bus = SYSFS_BUS_RBD;
++	if (!strncmp(pp->dev,"nvme", 4))
++		pp->bus = SYSFS_BUS_NVME;
+ 
+ 	if (pp->bus == SYSFS_BUS_UNDEF)
+ 		return 0;
+@@ -1106,6 +1170,9 @@ sysfs_pathinfo(struct path * pp)
+ 	} else if (pp->bus == SYSFS_BUS_RBD) {
+ 		if (rbd_sysfs_pathinfo(pp))
+ 			return 1;
++	} else if (pp->bus == SYSFS_BUS_NVME) {
++		if (nvme_sysfs_pathinfo(pp))
++			return 1;
+ 	}
+ 	return 0;
+ }
+@@ -1132,7 +1199,7 @@ cciss_ioctl_pathinfo (struct path * pp,
+ }
+ 
+ int
+-get_state (struct path * pp, int daemon)
++get_state (struct path * pp, int daemon, int oldstate)
+ {
+ 	struct checker * c = &pp->checker;
+ 	int state;
+@@ -1171,8 +1238,9 @@ get_state (struct path * pp, int daemon)
+ 	    (pp->bus != SYSFS_BUS_SCSI ||
+ 	     sysfs_get_timeout(pp, &(c->timeout))))
+ 		c->timeout = DEF_TIMEOUT;
+-	state = checker_check(c);
+-	condlog(3, "%s: state = %s", pp->dev, checker_state_name(state));
++	state = checker_check(c, oldstate);
++	condlog(3, "%s: %s state = %s", pp->dev,
++		checker_name(c), checker_state_name(state));
+ 	if (state != PATH_UP && state != PATH_GHOST &&
+ 	    strlen(checker_message(c)))
+ 		condlog(3, "%s: checker msg is \"%s\"",
+@@ -1256,6 +1324,82 @@ free_dev:
+ 	return ret;
+ }
+ 
++/*
++ * Mangle string of length *len starting at start
++ * by removing character sequence "00" (hex for a 0 byte),
++ * starting at end, backwards.
++ * Changes the value of *len if characters were removed.
++ * Returns a pointer to the position where "end" was moved to.
++ */
++static char *
++skip_zeroes_backward(char* start, int *len, char *end)
++{
++	char *p = end;
++
++	while (p >= start + 2 && *(p - 1) == '0' && *(p - 2) == '0')
++		p -= 2;
++
++	if (p == end)
++		return p;
++
++	memmove(p, end, start + *len + 1 - end);
++	*len -= end - p;
++
++	return p;
++}
++
++/*
++ * Fix for NVME wwids looking like this:
++ * nvme.0000-3163653363666438366239656630386200-4c696e75780000000000000000000000000000000000000000000000000000000000000000000000-00000002
++ * which are encountered in some combinations of Linux NVME host and target.
++ * The '00' are hex-encoded 0-bytes which are forbidden in the serial (SN)
++ * and model (MN) fields. Discard them.
++ * If a WWID of the above type is found, sets pp->wwid and returns a value > 0.
++ * Otherwise, returns 0.
++ */
++static int
++fix_broken_nvme_wwid(struct path *pp, const char *value, int size)
++{
++	static const char _nvme[] = "nvme.";
++	int len, i;
++	char mangled[256];
++	char *p;
++
++	len = strlen(value);
++	if (len >= sizeof(mangled))
++		return 0;
++
++	/* Check that value starts with "nvme.%04x-" */
++	if (memcmp(value, _nvme, sizeof(_nvme) - 1) || value[9] != '-')
++		return 0;
++	for (i = 5; i < 9; i++)
++		if (!isxdigit(value[i]))
++			return 0;
++
++	memcpy(mangled, value, len + 1);
++
++	/* search end of "model" part and strip trailing '00' */
++	p = memrchr(mangled, '-', len);
++	if (p == NULL)
++		return 0;
++
++	p = skip_zeroes_backward(mangled, &len, p);
++
++	/* search end of "serial" part */
++	p = memrchr(mangled, '-', p - mangled);
++	if (p == NULL || memrchr(mangled, '-', p - mangled) != mangled + 9)
++		/* We expect exactly 3 '-' in the value */
++		return 0;
++
++	p = skip_zeroes_backward(mangled, &len, p);
++	if (len >= size)
++		return 0;
++
++	memcpy(pp->wwid, mangled, len + 1);
++	condlog(2, "%s: over-long WWID shortened to %s", pp->dev, pp->wwid);
++	return len;
++}
++
+ int
+ get_uid (struct path * pp, struct udev_device *udev)
+ {
+@@ -1287,14 +1431,10 @@ get_uid (struct path * pp, struct udev_d
+ 		     conf->cmd == CMD_VALID_PATH)
+ 			value = getenv(pp->uid_attribute);
+ 		if (value && strlen(value)) {
+-			size_t len = WWID_SIZE;
+-
+-			if (strlen(value) + 1 > WWID_SIZE) {
++			size_t len = strlcpy(pp->wwid, value, WWID_SIZE);
++			if (len > WWID_SIZE &&
++			    !fix_broken_nvme_wwid(pp, value, WWID_SIZE))
+ 				condlog(0, "%s: wwid overflow", pp->dev);
+-			} else {
+-				len = strlen(value);
+-			}
+-			strncpy(pp->wwid, value, len);
+ 			condlog(4, "%s: got wwid of '%s'", pp->dev, pp->wwid);
+ 			pp->missing_udev_info = INFO_OK;
+ 			pp->tick = 0;
+@@ -1381,7 +1521,8 @@ pathinfo (struct path *pp, vector hwtabl
+ 
+ 	if (mask & DI_CHECKER) {
+ 		if (path_state == PATH_UP) {
+-			pp->chkrstate = pp->state = get_state(pp, 0);
++			pp->chkrstate = pp->state = get_state(pp, 0,
++							      path_state);
+ 			if (pp->state == PATH_UNCHECKED ||
+ 			    pp->state == PATH_WILD)
+ 				goto blank;
+Index: multipath-tools-130222/libmultipath/hwtable.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/hwtable.c
++++ multipath-tools-130222/libmultipath/hwtable.c
+@@ -1185,7 +1185,15 @@ static struct hwentry default_hw[] = {
+ 		.checker_name  = RBD,
+ 		.deferred_remove = DEFERRED_REMOVE_ON,
+ 	},
+-
++	/*
++	 *  Generic NVMe devices
++	 */
++	{
++		.vendor        = "NVME",
++		.product       = ".*",
++		.uid_attribute = "ID_WWN",
++		.checker_name  = NONE,
++	},
+ 	/*
+ 	 * EOL
+ 	 */
+Index: multipath-tools-130222/libmultipath/structs.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/structs.h
++++ multipath-tools-130222/libmultipath/structs.h
+@@ -54,6 +54,7 @@ enum sysfs_buses {
+ 	SYSFS_BUS_CCW,
+ 	SYSFS_BUS_CCISS,
+ 	SYSFS_BUS_RBD,
++	SYSFS_BUS_NVME,
+ };
+ 
+ enum pathstates {
+Index: multipath-tools-130222/libmultipath/checkers.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/checkers.c
++++ multipath-tools-130222/libmultipath/checkers.c
+@@ -101,6 +101,8 @@ struct checker * add_checker (char * nam
+ 	if (!c)
+ 		return NULL;
+ 	snprintf(c->name, CHECKER_NAME_LEN, "%s", name);
++	if (!strncmp(c->name, NONE, 4))
++		goto done;
+ 	snprintf(libname, LIB_CHECKER_NAMELEN, "%s/libcheck%s.so",
+ 		 conf->multipath_dir, name);
+ 	if (stat(libname,&stbuf) < 0) {
+@@ -144,7 +146,7 @@ struct checker * add_checker (char * nam
+ 		condlog(0, "A dynamic linking error occurred: (%s)", errstr);
+ 	if (!c->repair)
+ 		goto out;
+-
++done:
+ 	c->fd = 0;
+ 	c->sync = 1;
+ 	list_add(&c->node, &checkers);
+@@ -194,14 +196,16 @@ int checker_init (struct checker * c, vo
+ 	if (!c)
+ 		return 1;
+ 	c->mpcontext = mpctxt_addr;
+-	return c->init(c);
++	if (c->init)
++		return c->init(c);
++	return 0;
+ }
+ 
+ void checker_put (struct checker * dst)
+ {
+ 	struct checker * src;
+ 
+-	if (!dst)
++	if (!dst || !strlen(dst->name))
+ 		return;
+ 	src = checker_lookup(dst->name);
+ 	if (dst->free)
+@@ -221,10 +225,11 @@ void checker_repair (struct checker * c)
+ 		return;
+ 	}
+ 
+-	c->repair(c);
++	if (c->repair)
++		c->repair(c);
+ }
+ 
+-int checker_check (struct checker * c)
++int checker_check (struct checker * c, int path_state)
+ {
+ 	int r;
+ 
+@@ -236,6 +241,8 @@ int checker_check (struct checker * c)
+ 		MSG(c, "checker disabled");
+ 		return PATH_UNCHECKED;
+ 	}
++	if (!strncmp(c->name, NONE, 4))
++		return path_state;
+ 	if (c->fd <= 0) {
+ 		MSG(c, "no usable fd");
+ 		return PATH_WILD;
+@@ -249,6 +256,8 @@ int checker_selected (struct checker * c
+ {
+ 	if (!c)
+ 		return 0;
++	if (!strncmp(c->name, NONE, 4))
++		return 1;
+ 	return (c->check) ? 1 : 0;
+ }
+ 
+Index: multipath-tools-130222/libmultipath/checkers.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/checkers.h
++++ multipath-tools-130222/libmultipath/checkers.h
+@@ -75,6 +75,7 @@ enum path_check_state {
+ #define EMC_CLARIION "emc_clariion"
+ #define READSECTOR0  "readsector0"
+ #define CCISS_TUR    "cciss_tur"
++#define NONE         "none"
+ #define RBD          "rbd"
+ 
+ #define DEFAULT_CHECKER DIRECTIO
+@@ -129,7 +130,7 @@ void checker_set_fd (struct checker *, i
+ void checker_enable (struct checker *);
+ void checker_disable (struct checker *);
+ void checker_repair (struct checker *);
+-int checker_check (struct checker *);
++int checker_check (struct checker *, int);
+ int checker_selected (struct checker *);
+ char * checker_name (struct checker *);
+ char * checker_message (struct checker *);
+Index: multipath-tools-130222/libmultipath/discovery.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/discovery.h
++++ multipath-tools-130222/libmultipath/discovery.h
+@@ -35,7 +35,7 @@ int path_discovery (vector pathvec, stru
+ 
+ int do_tur (char *);
+ int path_offline (struct path *);
+-int get_state (struct path * pp, int daemon);
++int get_state (struct path * pp, int daemon, int state);
+ int pathinfo (struct path *, vector hwtable, int mask);
+ int store_pathinfo (vector pathvec, vector hwtable,
+ 		    struct udev_device *udevice, int flag,
+Index: multipath-tools-130222/libmultipath/uevent.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/uevent.c
++++ multipath-tools-130222/libmultipath/uevent.c
+@@ -447,7 +447,7 @@ int uevent_listen(struct udev *udev)
+ 		goto out;
+ 	}
+ 	err = udev_monitor_filter_add_match_subsystem_devtype(monitor, "block",
+-							      NULL);
++							      "disk");
+ 	if (err)
+ 		condlog(2, "failed to create filter : %s", strerror(-err));
+ 	err = udev_monitor_enable_receiving(monitor);
+Index: multipath-tools-130222/multipath/multipath.conf.5
+===================================================================
+--- multipath-tools-130222.orig/multipath/multipath.conf.5
++++ multipath-tools-130222/multipath/multipath.conf.5
+@@ -284,6 +284,9 @@ Check the path state for LSI/Engenio/Net
+ .B directio
+ Read the first sector with direct I/O.
+ .TP
++.B none
++Do not check the device, fallback to use the values retrieved from sysfs
++.TP
+ .B rbd
+ Check if the path is in the Ceph blacklist.
+ .TP
+Index: multipath-tools-130222/multipathd/main.c
+===================================================================
+--- multipath-tools-130222.orig/multipathd/main.c
++++ multipath-tools-130222/multipathd/main.c
+@@ -908,28 +908,6 @@ out:
+ 	return r;
+ }
+ 
+-static int
+-uev_discard(char * devpath)
+-{
+-	char *tmp;
+-	char a[11], b[11];
+-
+-	/*
+-	 * keep only block devices, discard partitions
+-	 */
+-	tmp = strstr(devpath, "/block/");
+-	if (tmp == NULL){
+-		condlog(4, "no /block/ in '%s'", devpath);
+-		return 1;
+-	}
+-	if (sscanf(tmp, "/block/%10s", a) != 1 ||
+-	    sscanf(tmp, "/block/%10[^/]/%10s", a, b) == 2) {
+-		condlog(4, "discard event on %s", devpath);
+-		return 1;
+-	}
+-	return 0;
+-}
+-
+ int
+ uev_trigger (struct uevent * uev, void * trigger_data)
+ {
+@@ -938,9 +916,6 @@ uev_trigger (struct uevent * uev, void *
+ 
+ 	vecs = (struct vectors *)trigger_data;
+ 
+-	if (uev_discard(uev->devpath))
+-		return 0;
+-
+ 	pthread_cleanup_push(cleanup_lock, &vecs->lock);
+ 	lock(vecs->lock);
+ 	pthread_testcancel();
+@@ -1358,7 +1333,7 @@ check_path (struct vectors * vecs, struc
+ 
+ 	newstate = path_offline(pp);
+ 	if (newstate == PATH_UP)
+-		newstate = get_state(pp, 1);
++		newstate = get_state(pp, 1, newstate);
+ 	else
+ 		checker_clear_message(&pp->checker);
+ 
