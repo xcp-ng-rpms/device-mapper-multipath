@@ -1,0 +1,489 @@
+---
+ libmultipath/config.c      |    4 +
+ libmultipath/config.h      |    3 +
+ libmultipath/defaults.h    |    1 
+ libmultipath/devmapper.c   |   19 ++++++--
+ libmultipath/dict.c        |  104 +++++++++++++++++++++++++++++++++++++++++++++
+ libmultipath/propsel.c     |   26 +++++++++++
+ libmultipath/propsel.h     |    1 
+ libmultipath/structs.h     |    7 +++
+ multipath/multipath.conf.5 |   13 +++++
+ multipath/multipath.rules  |    1 
+ multipathd/main.c          |   27 +++++++++++
+ 11 files changed, 202 insertions(+), 4 deletions(-)
+
+Index: multipath-tools-130222/libmultipath/config.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/config.c
++++ multipath-tools-130222/libmultipath/config.c
+@@ -348,6 +348,7 @@ merge_hwe (struct hwentry * dst, struct
+ 	merge_num(skip_kpartx);
+ 	merge_num(max_sectors_kb);
+ 	merge_num(unpriv_sgio);
++	merge_num(ghost_delay);
+ 
+ 	/*
+ 	 * Make sure features is consistent with
+@@ -412,6 +413,7 @@ overwrite_hwe (struct hwentry * dst, str
+ 	overwrite_num(skip_kpartx);
+ 	overwrite_num(max_sectors_kb);
+ 	overwrite_num(unpriv_sgio);
++	overwrite_num(ghost_delay);
+ 
+ 	/*
+ 	 * Make sure features is consistent with
+@@ -482,6 +484,7 @@ store_hwe (vector hwtable, struct hwentr
+ 	hwe->retain_hwhandler = dhwe->retain_hwhandler;
+ 	hwe->detect_prio = dhwe->detect_prio;
+ 	hwe->detect_checker = dhwe->detect_checker;
++	hwe->ghost_delay = dhwe->ghost_delay;
+ 
+ 	if (dhwe->bl_product && !(hwe->bl_product = set_param_str(dhwe->bl_product)))
+ 		goto out;
+@@ -694,6 +697,7 @@ load_config (char * file, struct udev *u
+ 	conf->disable_changed_wwids = 0;
+ 	conf->max_sectors_kb = DEFAULT_MAX_SECTORS_KB;
+ 	conf->unpriv_sgio = DEFAULT_UNPRIV_SGIO;
++	conf->ghost_delay = DEFAULT_GHOST_DELAY;
+ 
+ 	/*
+ 	 * preload default hwtable
+Index: multipath-tools-130222/libmultipath/config.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/config.h
++++ multipath-tools-130222/libmultipath/config.h
+@@ -70,6 +70,7 @@ struct hwentry {
+ 	int skip_kpartx;
+ 	int max_sectors_kb;
+ 	int unpriv_sgio;
++	int ghost_delay;
+ 	char * bl_product;
+ };
+ 
+@@ -100,6 +101,7 @@ struct mpentry {
+ 	int skip_kpartx;
+ 	int max_sectors_kb;
+ 	int unpriv_sgio;
++	int ghost_delay;
+ 	uid_t uid;
+ 	gid_t gid;
+ 	mode_t mode;
+@@ -159,6 +161,7 @@ struct config {
+ 	int disable_changed_wwids;
+ 	int max_sectors_kb;
+ 	int unpriv_sgio;
++	int ghost_delay;
+ 	unsigned int version[3];
+ 
+ 	char * dev;
+Index: multipath-tools-130222/libmultipath/defaults.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/defaults.h
++++ multipath-tools-130222/libmultipath/defaults.h
+@@ -28,6 +28,7 @@
+ #define DEFAULT_SKIP_KPARTX SKIP_KPARTX_OFF
+ #define DEFAULT_MAX_SECTORS_KB	MAX_SECTORS_KB_UNDEF
+ #define DEFAULT_UNPRIV_SGIO UNPRIV_SGIO_OFF
++#define DEFAULT_GHOST_DELAY GHOST_DELAY_OFF
+ 
+ #define DEFAULT_CHECKINT	5
+ #define MAX_CHECKINT(a)		(a << 2)
+Index: multipath-tools-130222/libmultipath/devmapper.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/devmapper.c
++++ multipath-tools-130222/libmultipath/devmapper.c
+@@ -23,6 +23,7 @@
+ #include "sysfs.h"
+ #include "discovery.h"
+ #include "log_pthread.h"
++#include "propsel.h"
+ #include <sys/types.h>
+ #include <time.h>
+ 
+@@ -334,7 +335,7 @@ static uint16_t build_udev_flags(const s
+ 	/* DM_UDEV_DISABLE_LIBRARY_FALLBACK is added in dm_addmap */
+ 	return  (mpp->skip_kpartx == SKIP_KPARTX_ON ?
+ 		 MPATH_UDEV_NO_KPARTX_FLAG : 0) |
+-		(mpp->nr_active == 0 ?
++		((mpp->nr_active == 0 || mpp->ghost_delay_tick > 0)?
+ 		 MPATH_UDEV_NO_PATHS_FLAG : 0) |
+ 		(reload && !mpp->force_udev_reload ?
+ 		 MPATH_UDEV_RELOAD_FLAG : 0);
+@@ -343,8 +344,16 @@ static uint16_t build_udev_flags(const s
+ extern int
+ dm_addmap_create (struct multipath *mpp, char * params) {
+ 	int ro;
+-	uint16_t udev_flags = build_udev_flags(mpp, 0);
++	uint16_t udev_flags;
+ 
++	select_ghost_delay(mpp);
++	if (conf->daemon && mpp->ghost_delay > 0 && mpp->nr_active &&
++	    pathcount(mpp, PATH_GHOST) == mpp->nr_active)
++		mpp->ghost_delay_tick = mpp->ghost_delay;
++	else
++		mpp->ghost_delay = 0;
++
++	udev_flags = build_udev_flags(mpp, 0);
+ 	sysfs_set_max_sectors_kb(mpp, 0);
+ 	for (ro = 0; ro <= 1; ro++) {
+ 		int err;
+@@ -373,7 +382,11 @@ dm_addmap_create (struct multipath *mpp,
+ extern int
+ dm_addmap_reload (struct multipath *mpp, char *params, int flush) {
+ 	int r = 0;
+-	uint16_t udev_flags = build_udev_flags(mpp, 1);
++	uint16_t udev_flags;
++
++	if (mpp->ghost_delay_tick > 0 && pathcount(mpp, PATH_UP))
++		mpp->ghost_delay_tick = mpp->ghost_delay = 0;
++	udev_flags = build_udev_flags(mpp, 1);
+ 
+ 	sysfs_set_max_sectors_kb(mpp, 1);
+ 	if (!mpp->force_readonly)
+Index: multipath-tools-130222/libmultipath/dict.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/dict.c
++++ multipath-tools-130222/libmultipath/dict.c
+@@ -1032,6 +1032,25 @@ def_unpriv_sgio_handler(vector strvec)
+ 	return 0;
+ }
+ 
++static int
++def_ghost_delay_handler(vector strvec)
++{
++	char * buff;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		conf->ghost_delay = GHOST_DELAY_OFF;
++	if ((conf->ghost_delay = atoi(buff)) < 0)
++		conf->ghost_delay = DEFAULT_GHOST_DELAY;
++
++	FREE(buff);
++	return 0;
++}
++
+ /*
+  * blacklist block handlers
+  */
+@@ -1895,6 +1914,29 @@ hw_unpriv_sgio_handler(vector strvec)
+ 	return 0;
+ }
+ 
++static int
++hw_ghost_delay_handler(vector strvec)
++{
++	struct hwentry *hwe = VECTOR_LAST_SLOT(conf->hwtable);
++	char * buff;
++
++	if (!hwe)
++		return 1;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		hwe->ghost_delay = GHOST_DELAY_OFF;
++	if ((hwe->ghost_delay = atoi(buff)) < 0)
++		hwe->ghost_delay = DEFAULT_GHOST_DELAY;
++
++	FREE(buff);
++	return 0;
++}
++
+ /*
+  * multipaths block handlers
+  */
+@@ -2474,6 +2516,29 @@ mp_unpriv_sgio_handler(vector strvec)
+ 	return 0;
+ }
+ 
++static int
++mp_ghost_delay_handler(vector strvec)
++{
++	struct mpentry *mpe = VECTOR_LAST_SLOT(conf->mptable);
++	char * buff;
++
++	if (!mpe)
++		return 1;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		mpe->ghost_delay = GHOST_DELAY_OFF;
++	if ((mpe->ghost_delay = atoi(buff)) < 0)
++		mpe->ghost_delay = DEFAULT_GHOST_DELAY;
++
++	FREE(buff);
++	return 0;
++}
++
+ /*
+  * config file keywords printing
+  */
+@@ -2788,6 +2853,19 @@ snprint_mp_unpriv_sgio (char * buff, int
+ }
+ 
+ static int
++snprint_mp_ghost_delay (char * buff, int len, void * data)
++{
++	struct mpentry * mpe = (struct mpentry *)data;
++
++	if (mpe->ghost_delay == GHOST_DELAY_UNDEF)
++		return 0;
++	else if (mpe->ghost_delay == GHOST_DELAY_OFF)
++		return snprintf(buff, len, "no");
++	else
++		return snprintf(buff, len, "%d", mpe->ghost_delay);
++}
++
++static int
+ snprint_hw_fast_io_fail(char * buff, int len, void * data)
+ {
+ 	struct hwentry * hwe = (struct hwentry *)data;
+@@ -3202,6 +3280,19 @@ snprint_hw_unpriv_sgio(char * buff, int
+ }
+ 
+ static int
++snprint_hw_ghost_delay (char * buff, int len, void * data)
++{
++	struct hwentry * hwe = (struct hwentry *)data;
++
++	if (hwe->ghost_delay == GHOST_DELAY_UNDEF)
++		return 0;
++	else if (hwe->ghost_delay == GHOST_DELAY_OFF)
++		return snprintf(buff, len, "no");
++	else
++		return snprintf(buff, len, "%d", hwe->ghost_delay);
++}
++
++static int
+ snprint_def_polling_interval (char * buff, int len, void * data)
+ {
+ 	return snprintf(buff, len, "%i", conf->checkint);
+@@ -3696,6 +3787,16 @@ snprint_def_unpriv_sgio(char * buff, int
+ }
+ 
+ static int
++snprint_def_ghost_delay (char * buff, int len, void * data)
++{
++	if (conf->ghost_delay == GHOST_DELAY_OFF ||
++	    conf->ghost_delay == GHOST_DELAY_UNDEF)
++		return snprintf(buff, len, "no");
++	else
++		return snprintf(buff, len, "%d", conf->ghost_delay);
++}
++
++static int
+ snprint_ble_simple (char * buff, int len, void * data)
+ {
+ 	struct blentry * ble = (struct blentry *)data;
+@@ -3792,6 +3893,7 @@ init_keywords(void)
+ 	install_keyword("disable_changed_wwids", &def_disable_changed_wwids_handler, &snprint_def_disable_changed_wwids);
+ 	install_keyword("max_sectors_kb", &def_max_sectors_kb_handler, &snprint_def_max_sectors_kb);
+ 	install_keyword("unpriv_sgio", &def_unpriv_sgio_handler, &snprint_def_unpriv_sgio);
++	install_keyword("ghost_delay", &def_ghost_delay_handler, &snprint_def_ghost_delay);
+ 	__deprecated install_keyword("default_selector", &def_selector_handler, NULL);
+ 	__deprecated install_keyword("default_path_grouping_policy", &def_pgpolicy_handler, NULL);
+ 	__deprecated install_keyword("default_uid_attribute", &def_uid_attribute_handler, NULL);
+@@ -3863,6 +3965,7 @@ init_keywords(void)
+ 	install_keyword("skip_kpartx", &hw_skip_kpartx_handler, &snprint_hw_skip_kpartx);
+ 	install_keyword("max_sectors_kb", &hw_max_sectors_kb_handler, &snprint_hw_max_sectors_kb);
+ 	install_keyword("unpriv_sgio", &hw_unpriv_sgio_handler, &snprint_hw_unpriv_sgio);
++	install_keyword("ghost_delay", &hw_ghost_delay_handler, &snprint_hw_ghost_delay);
+ 	install_sublevel_end();
+ 
+ 	install_keyword_root("overrides", &nop_handler);
+@@ -3923,5 +4026,6 @@ init_keywords(void)
+ 	install_keyword("skip_kpartx", &mp_skip_kpartx_handler, &snprint_mp_skip_kpartx);
+ 	install_keyword("max_sectors_kb", &mp_max_sectors_kb_handler, &snprint_mp_max_sectors_kb);
+ 	install_keyword("unpriv_sgio", &mp_unpriv_sgio_handler, &snprint_mp_unpriv_sgio);
++	install_keyword("ghost_delay", &mp_ghost_delay_handler, &snprint_mp_ghost_delay);
+ 	install_sublevel_end();
+ }
+Index: multipath-tools-130222/libmultipath/propsel.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/propsel.c
++++ multipath-tools-130222/libmultipath/propsel.c
+@@ -966,3 +966,29 @@ select_unpriv_sgio (struct multipath * m
+ 	condlog(3, "unpriv_sgio = DISABLED (internal default)");
+ 	return 0;
+ }
++
++extern int
++select_ghost_delay (struct multipath * mp)
++{
++	if (mp->mpe && mp->mpe->ghost_delay != GHOST_DELAY_UNDEF) {
++		mp->ghost_delay = mp->mpe->ghost_delay;
++		condlog(3, "ghost_delay = %i (multipath setting)",
++				mp->ghost_delay);
++		return 0;
++	}
++	if (mp->hwe && mp->hwe->ghost_delay != GHOST_DELAY_UNDEF) {
++		mp->ghost_delay = mp->hwe->ghost_delay;
++		condlog(3, "ghost_delay = %i (controler setting)",
++				mp->ghost_delay);
++		return 0;
++	}
++	if (conf->ghost_delay != GHOST_DELAY_UNDEF) {
++		mp->ghost_delay = conf->ghost_delay;
++		condlog(3, "ghost_delay = %i (config file default)",
++				mp->ghost_delay);
++		return 0;
++	}
++	mp->ghost_delay = DEFAULT_GHOST_DELAY;
++	condlog(3, "ghost_delay = DISABLED (internal default)");
++	return 0;
++}
+Index: multipath-tools-130222/libmultipath/propsel.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/propsel.h
++++ multipath-tools-130222/libmultipath/propsel.h
+@@ -27,3 +27,4 @@ int select_delay_wait_checks (struct mul
+ int select_skip_kpartx (struct multipath * mp);
+ int select_max_sectors_kb (struct multipath * mp);
+ int select_unpriv_sgio (struct multipath * mp);
++int select_ghost_delay (struct multipath * mp);
+Index: multipath-tools-130222/libmultipath/structs.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/structs.h
++++ multipath-tools-130222/libmultipath/structs.h
+@@ -176,6 +176,11 @@ enum prkey_sources {
+ 	PRKEY_SOURCE_FILE,
+ };
+ 
++enum ghost_delay_states {
++	GHOST_DELAY_OFF = -1,
++	GHOST_DELAY_UNDEF = 0,
++};
++
+ struct sg_id {
+ 	int host_no;
+ 	int channel;
+@@ -273,6 +278,8 @@ struct multipath {
+ 	int max_sectors_kb;
+ 	int force_readonly;
+ 	int unpriv_sgio;
++	int ghost_delay;
++	int ghost_delay_tick;
+ 	unsigned int dev_loss;
+ 	uid_t uid;
+ 	gid_t gid;
+Index: multipath-tools-130222/multipathd/main.c
+===================================================================
+--- multipath-tools-130222.orig/multipathd/main.c
++++ multipath-tools-130222/multipathd/main.c
+@@ -195,6 +195,8 @@ sync_map_state(struct multipath *mpp)
+ 			    pp->state == PATH_WILD ||
+ 			    pp->state == PATH_DELAYED)
+ 				continue;
++			if (mpp->ghost_delay_tick > 0)
++				continue;
+ 			if ((pp->dmstate == PSTATE_FAILED ||
+ 			     pp->dmstate == PSTATE_UNDEF) &&
+ 			    (pp->state == PATH_UP || pp->state == PATH_GHOST))
+@@ -535,7 +537,7 @@ ev_add_path (struct path * pp, struct ve
+ 	if (mpp && mpp->wait_for_udev) {
+ 		if (pathcount(mpp, PATH_UP) == 0 &&
+ 		    (pathcount(mpp, PATH_GHOST) == 0 ||
+-		     pp->tpgs == TPGS_IMPLICIT))
++		     mpp->ghost_delay_tick > 0 || pp->tpgs == TPGS_IMPLICIT))
+ 			mpp->force_udev_reload = 1;
+ 		else {
+ 			condlog(2, "%s [%s]: delaying path addition until %s is fully initialized", pp->dev, pp->dev_t, mpp->alias);
+@@ -1215,6 +1217,28 @@ missing_uev_wait_tick(struct vectors *ve
+ }
+ 
+ static void
++ghost_delay_tick(struct vectors *vecs)
++{
++	struct multipath * mpp;
++	unsigned int i;
++
++	vector_foreach_slot (vecs->mpvec, mpp, i) {
++		if (mpp->ghost_delay_tick <= 0)
++			continue;
++		if (--mpp->ghost_delay_tick <= 0) {
++			condlog(0, "%s: timed out waiting for active path",
++				mpp->alias);
++			if (update_map(mpp, vecs) != 0) {
++				/* update_map removed map */
++				i--;
++				continue;
++			}
++			mpp->ghost_delay = mpp->ghost_delay_tick = 0;
++		}
++	}
++}
++
++static void
+ defered_failback_tick (vector mpvec)
+ {
+ 	struct multipath * mpp;
+@@ -1560,6 +1584,7 @@ checkerloop (void *ap)
+ 			defered_failback_tick(vecs->mpvec);
+ 			retry_count_tick(vecs->mpvec);
+ 			missing_uev_wait_tick(vecs);
++			ghost_delay_tick(vecs);
+ 		}
+ 		if (count)
+ 			count--;
+Index: multipath-tools-130222/multipath/multipath.rules
+===================================================================
+--- multipath-tools-130222.orig/multipath/multipath.rules
++++ multipath-tools-130222/multipath/multipath.rules
+@@ -55,6 +55,7 @@ ENV{DM_SUBSYSTEM_UDEV_FLAG1}=="1", GOTO=
+ ENV{DM_ACTIVATION}=="1", ENV{DM_MULTIPATH_NEED_KPARTX}="1"
+ ENV{DM_SUSPENDED}=="1", GOTO="end_mpath"
+ ENV{DM_ACTION}=="PATH_FAILED", GOTO="end_mpath"
++ENV{DM_NOSCAN}=="1", GOTO="end_mpath"
+ ENV{DM_ACTIVATION}!="1", ENV{DM_MULTIPATH_NEED_KPARTX}!="1", GOTO="end_mpath"
+ RUN+="$env{MPATH_SBIN_PATH}/kpartx -an $tempnode", \
+ 	ENV{DM_MULTIPATH_NEED_KPARTX}=""
+Index: multipath-tools-130222/multipath/multipath.conf.5
+===================================================================
+--- multipath-tools-130222.orig/multipath/multipath.conf.5
++++ multipath-tools-130222/multipath/multipath.conf.5
+@@ -601,6 +601,15 @@ device to the specified value. Default i
+ If set to \fIyes\fR, multipath will set upriv_sgio on the multipath device and
+ all its paths, when it is created or reloaded. The default is
+ .I no
++.TP
++.B ghost_delay
++Sets the number of seconds that multipath will wait after creating a device
++with only ghost paths before marking it ready for use in systemd. This gives
++the active paths time to appear before the multipath runs the hardware handler
++to switch the ghost paths to active ones. Setting this to \fI0\fR or \fIoff\fR
++makes multipath immediately mark a device with only ghost paths as ready. The
++default is
++.I off
+ .
+ .SH "blacklist section"
+ The
+@@ -716,6 +725,8 @@ section:
+ .B max_sectors_kb
+ .TP
+ .B unpriv_sgio
++.TP
++.B ghost_delay
+ .RE
+ .PD
+ .LP
+@@ -820,6 +831,8 @@ section:
+ .B max_sectors_kb
+ .TP
+ .B unpriv_sgio
++.TP
++.B ghost_delay
+ .RE
+ .PD
+ .LP

@@ -1,0 +1,456 @@
+---
+ libmultipath/config.c      |    3 +
+ libmultipath/config.h      |    3 +
+ libmultipath/configure.c   |    2 
+ libmultipath/defaults.h    |    1 
+ libmultipath/dict.c        |  113 +++++++++++++++++++++++++++++++++++++++++++++
+ libmultipath/discovery.c   |   44 +++++++++++++++++
+ libmultipath/discovery.h   |    1 
+ libmultipath/propsel.c     |   26 ++++++++++
+ libmultipath/propsel.h     |    1 
+ libmultipath/structs.h     |    8 ++-
+ multipath/multipath.conf.5 |    9 +++
+ 11 files changed, 210 insertions(+), 1 deletion(-)
+
+Index: multipath-tools-130222/libmultipath/config.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/config.c
++++ multipath-tools-130222/libmultipath/config.c
+@@ -347,6 +347,7 @@ merge_hwe (struct hwentry * dst, struct
+ 	merge_num(delay_wait_checks);
+ 	merge_num(skip_kpartx);
+ 	merge_num(max_sectors_kb);
++	merge_num(unpriv_sgio);
+ 
+ 	/*
+ 	 * Make sure features is consistent with
+@@ -410,6 +411,7 @@ overwrite_hwe (struct hwentry * dst, str
+ 	overwrite_num(delay_wait_checks);
+ 	overwrite_num(skip_kpartx);
+ 	overwrite_num(max_sectors_kb);
++	overwrite_num(unpriv_sgio);
+ 
+ 	/*
+ 	 * Make sure features is consistent with
+@@ -690,6 +692,7 @@ load_config (char * file, struct udev *u
+ 	conf->remove_retries = 0;
+ 	conf->disable_changed_wwids = 0;
+ 	conf->max_sectors_kb = DEFAULT_MAX_SECTORS_KB;
++	conf->unpriv_sgio = DEFAULT_UNPRIV_SGIO;
+ 
+ 	/*
+ 	 * preload default hwtable
+Index: multipath-tools-130222/libmultipath/config.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/config.h
++++ multipath-tools-130222/libmultipath/config.h
+@@ -67,6 +67,7 @@ struct hwentry {
+ 	int delay_wait_checks;
+ 	int skip_kpartx;
+ 	int max_sectors_kb;
++	int unpriv_sgio;
+ 	char * bl_product;
+ };
+ 
+@@ -95,6 +96,7 @@ struct mpentry {
+ 	int delay_wait_checks;
+ 	int skip_kpartx;
+ 	int max_sectors_kb;
++	int unpriv_sgio;
+ 	uid_t uid;
+ 	gid_t gid;
+ 	mode_t mode;
+@@ -153,6 +155,7 @@ struct config {
+ 	int remove_retries;
+ 	int disable_changed_wwids;
+ 	int max_sectors_kb;
++	int unpriv_sgio;
+ 	unsigned int version[3];
+ 
+ 	char * dev;
+Index: multipath-tools-130222/libmultipath/configure.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/configure.c
++++ multipath-tools-130222/libmultipath/configure.c
+@@ -297,6 +297,7 @@ setup_map (struct multipath * mpp, char
+ 	select_delay_wait_checks(mpp);
+ 	select_skip_kpartx(mpp);
+ 	select_max_sectors_kb(mpp);
++	select_unpriv_sgio(mpp);
+ 
+ 	sysfs_set_scsi_tmo(mpp);
+ 	/*
+@@ -711,6 +712,7 @@ domap (struct multipath * mpp, char * pa
+ 			}
+ 		}
+ 		dm_setgeometry(mpp);
++		sysfs_set_unpriv_sgio(mpp);
+ 		return DOMAP_OK;
+ 	}
+ 	return DOMAP_FAIL;
+Index: multipath-tools-130222/libmultipath/defaults.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/defaults.h
++++ multipath-tools-130222/libmultipath/defaults.h
+@@ -27,6 +27,7 @@
+ #define DEFAULT_UEV_WAIT_TIMEOUT 30
+ #define DEFAULT_SKIP_KPARTX SKIP_KPARTX_OFF
+ #define DEFAULT_MAX_SECTORS_KB	MAX_SECTORS_KB_UNDEF
++#define DEFAULT_UNPRIV_SGIO UNPRIV_SGIO_OFF
+ 
+ #define DEFAULT_CHECKINT	5
+ #define MAX_CHECKINT(a)		(a << 2)
+Index: multipath-tools-130222/libmultipath/dict.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/dict.c
++++ multipath-tools-130222/libmultipath/dict.c
+@@ -1015,6 +1015,28 @@ def_max_sectors_kb_handler(vector strvec
+ 	return 0;
+ }
+ 
++static int
++def_unpriv_sgio_handler(vector strvec)
++{
++	char * buff;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		conf->unpriv_sgio = UNPRIV_SGIO_OFF;
++	else if ((strlen(buff) == 3 && !strcmp(buff, "yes")) ||
++		 (strlen(buff) == 1 && !strcmp(buff, "1")))
++		conf->unpriv_sgio = UNPRIV_SGIO_ON;
++	else
++		conf->unpriv_sgio = UNPRIV_SGIO_OFF;
++
++	FREE(buff);
++	return 0;
++}
++
+ /*
+  * blacklist block handlers
+  */
+@@ -1851,6 +1873,33 @@ hw_max_sectors_kb_handler(vector strvec)
+ 	return 0;
+ }
+ 
++static int
++hw_unpriv_sgio_handler(vector strvec)
++{
++	struct hwentry *hwe = VECTOR_LAST_SLOT(conf->hwtable);
++	char * buff;
++
++	if (!hwe)
++		return 1;
++
++	buff = set_value(strvec);
++
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		hwe->unpriv_sgio = UNPRIV_SGIO_OFF;
++	else if ((strlen(buff) == 3 && !strcmp(buff, "yes")) ||
++		 (strlen(buff) == 1 && !strcmp(buff, "1")))
++		hwe->unpriv_sgio = UNPRIV_SGIO_ON;
++	else
++		hwe->unpriv_sgio = UNPRIV_SGIO_UNDEF;
++
++	FREE(buff);
++	return 0;
++}
++
+ /*
+  * multipaths block handlers
+  */
+@@ -2422,6 +2471,32 @@ mp_max_sectors_kb_handler(vector strvec)
+ 	return 0;
+ }
+ 
++static int
++mp_unpriv_sgio_handler(vector strvec)
++{
++	struct mpentry *mpe = VECTOR_LAST_SLOT(conf->mptable);
++	char * buff;
++
++	if (!mpe)
++		return 1;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && strcmp(buff, "no") == 0) ||
++	    (strlen(buff) == 1 && strcmp(buff, "0") == 0))
++		mpe->unpriv_sgio = UNPRIV_SGIO_OFF;
++	else if ((strlen(buff) == 3 && strcmp(buff, "yes") == 0) ||
++		 (strlen(buff) == 1 && strcmp(buff, "1") == 0))
++		mpe->unpriv_sgio = UNPRIV_SGIO_ON;
++	else
++		mpe->unpriv_sgio = UNPRIV_SGIO_UNDEF;
++
++	FREE(buff);
++	return 0;
++}
++
+ /*
+  * config file keywords printing
+  */
+@@ -2731,6 +2806,19 @@ snprint_mp_max_sectors_kb(char * buff, i
+ }
+ 
+ static int
++snprint_mp_unpriv_sgio (char * buff, int len, void * data)
++{
++	struct mpentry * mpe = (struct mpentry *)data;
++
++	if (mpe->unpriv_sgio == UNPRIV_SGIO_UNDEF)
++		return 0;
++	else if (mpe->unpriv_sgio == UNPRIV_SGIO_OFF)
++		return snprintf(buff, len, "no");
++	else
++		return snprintf(buff, len, "yes");
++}
++
++static int
+ snprint_hw_fast_io_fail(char * buff, int len, void * data)
+ {
+ 	struct hwentry * hwe = (struct hwentry *)data;
+@@ -3132,6 +3220,19 @@ snprint_hw_max_sectors_kb(char * buff, i
+ }
+ 
+ static int
++snprint_hw_unpriv_sgio(char * buff, int len, void * data)
++{
++	struct hwentry * hwe = (struct hwentry *)data;
++
++	if (hwe->unpriv_sgio == UNPRIV_SGIO_ON)
++		return snprintf(buff, len, "yes");
++	else if (hwe->unpriv_sgio == UNPRIV_SGIO_OFF)
++		return snprintf(buff, len, "no");
++	else
++		return 0;
++}
++
++static int
+ snprint_def_polling_interval (char * buff, int len, void * data)
+ {
+ 	return snprintf(buff, len, "%i", conf->checkint);
+@@ -3617,6 +3718,15 @@ snprint_def_max_sectors_kb(char * buff,
+ }
+ 
+ static int
++snprint_def_unpriv_sgio(char * buff, int len, void * data)
++{
++	if (conf->unpriv_sgio == UNPRIV_SGIO_ON)
++		return snprintf(buff, len, "yes");
++	else
++		return snprintf(buff, len, "no");
++}
++
++static int
+ snprint_ble_simple (char * buff, int len, void * data)
+ {
+ 	struct blentry * ble = (struct blentry *)data;
+@@ -3699,6 +3809,7 @@ init_keywords(void)
+ 	install_keyword("remove_retries", &def_remove_retries_handler, &snprint_def_remove_retries);
+ 	install_keyword("disable_changed_wwids", &def_disable_changed_wwids_handler, &snprint_def_disable_changed_wwids);
+ 	install_keyword("max_sectors_kb", &def_max_sectors_kb_handler, &snprint_def_max_sectors_kb);
++	install_keyword("unpriv_sgio", &def_unpriv_sgio_handler, &snprint_def_unpriv_sgio);
+ 	__deprecated install_keyword("default_selector", &def_selector_handler, NULL);
+ 	__deprecated install_keyword("default_path_grouping_policy", &def_pgpolicy_handler, NULL);
+ 	__deprecated install_keyword("default_uid_attribute", &def_uid_attribute_handler, NULL);
+@@ -3769,6 +3880,7 @@ init_keywords(void)
+ 	install_keyword("delay_wait_checks", &hw_delay_wait_checks_handler, &snprint_hw_delay_wait_checks);
+ 	install_keyword("skip_kpartx", &hw_skip_kpartx_handler, &snprint_hw_skip_kpartx);
+ 	install_keyword("max_sectors_kb", &hw_max_sectors_kb_handler, &snprint_hw_max_sectors_kb);
++	install_keyword("unpriv_sgio", &hw_unpriv_sgio_handler, &snprint_hw_unpriv_sgio);
+ 	install_sublevel_end();
+ 
+ 	install_keyword_root("multipaths", &multipaths_handler);
+@@ -3798,5 +3910,6 @@ init_keywords(void)
+ 	install_keyword("delay_wait_checks", &mp_delay_wait_checks_handler, &snprint_mp_delay_wait_checks);
+ 	install_keyword("skip_kpartx", &mp_skip_kpartx_handler, &snprint_mp_skip_kpartx);
+ 	install_keyword("max_sectors_kb", &mp_max_sectors_kb_handler, &snprint_mp_max_sectors_kb);
++	install_keyword("unpriv_sgio", &mp_unpriv_sgio_handler, &snprint_mp_unpriv_sgio);
+ 	install_sublevel_end();
+ }
+Index: multipath-tools-130222/libmultipath/propsel.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/propsel.c
++++ multipath-tools-130222/libmultipath/propsel.c
+@@ -944,3 +944,29 @@ select_max_sectors_kb (struct multipath
+ 	mp->max_sectors_kb = MAX_SECTORS_KB_UNDEF;
+ 	return 0;
+ }
++
++extern int
++select_unpriv_sgio (struct multipath * mp)
++{
++	if (mp->mpe && mp->mpe->unpriv_sgio != UNPRIV_SGIO_UNDEF) {
++		mp->unpriv_sgio = mp->mpe->unpriv_sgio;
++		condlog(3, "unpriv_sgio = %i (multipath setting)",
++				mp->unpriv_sgio);
++		return 0;
++	}
++	if (mp->hwe && mp->hwe->unpriv_sgio != UNPRIV_SGIO_UNDEF) {
++		mp->unpriv_sgio = mp->hwe->unpriv_sgio;
++		condlog(3, "unpriv_sgio = %i (controler setting)",
++				mp->unpriv_sgio);
++		return 0;
++	}
++	if (conf->unpriv_sgio != UNPRIV_SGIO_UNDEF) {
++		mp->unpriv_sgio = conf->unpriv_sgio;
++		condlog(3, "unpriv_sgio = %i (config file default)",
++				mp->unpriv_sgio);
++		return 0;
++	}
++	mp->unpriv_sgio = DEFAULT_UNPRIV_SGIO;
++	condlog(3, "unpriv_sgio = DISABLED (internal default)");
++	return 0;
++}
+Index: multipath-tools-130222/libmultipath/propsel.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/propsel.h
++++ multipath-tools-130222/libmultipath/propsel.h
+@@ -26,3 +26,4 @@ int select_delay_watch_checks (struct mu
+ int select_delay_wait_checks (struct multipath * mp);
+ int select_skip_kpartx (struct multipath * mp);
+ int select_max_sectors_kb (struct multipath * mp);
++int select_unpriv_sgio (struct multipath * mp);
+Index: multipath-tools-130222/libmultipath/structs.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/structs.h
++++ multipath-tools-130222/libmultipath/structs.h
+@@ -134,12 +134,17 @@ enum skip_kpartx_states {
+ 	SKIP_KPARTX_ON,
+ };
+ 
+-
+ enum max_sectors_kb_states {
+ 	MAX_SECTORS_KB_UNDEF = 0,
+ 	MAX_SECTORS_KB_MIN = 4,  /* can't be smaller than page size */
+ };
+ 
++enum unpriv_sgio_states {
++	UNPRIV_SGIO_UNDEF,
++	UNPRIV_SGIO_OFF,
++	UNPRIV_SGIO_ON,
++};
++
+ enum scsi_protocol {
+ 	SCSI_PROTOCOL_FCP = 0,	/* Fibre Channel */
+ 	SCSI_PROTOCOL_SPI = 1,	/* parallel SCSI */
+@@ -260,6 +265,7 @@ struct multipath {
+ 	int skip_kpartx;
+ 	int max_sectors_kb;
+ 	int force_readonly;
++	int unpriv_sgio;
+ 	unsigned int dev_loss;
+ 	uid_t uid;
+ 	gid_t gid;
+Index: multipath-tools-130222/libmultipath/discovery.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/discovery.c
++++ multipath-tools-130222/libmultipath/discovery.c
+@@ -222,6 +222,50 @@ fail_reload:
+ }
+ 
+ int
++sysfs_set_unpriv_sgio(struct multipath *mpp)
++{
++	struct pathgroup * pgp;
++	struct path *pp;
++	int i, j, ret;
++	struct udev_device *udevice = NULL;
++
++	if (mpp->unpriv_sgio != UNPRIV_SGIO_ON)
++		return 0;
++	if (!mpp->dmi && dm_get_info(mpp->alias, &mpp->dmi) != 0) {
++		condlog(0, "failed to get dm info on %s to set unpriv_sgio",
++			mpp->alias);
++		return 1;
++	}
++	udevice = udev_device_new_from_devnum(conf->udev, 'b',
++					      makedev(mpp->dmi->major,
++						      mpp->dmi->minor));
++	if (!udevice) {
++		condlog(0, "failed to get udev device to set unpriv_sgio for %s", mpp->alias);
++		return 1;
++	}
++
++	ret = sysfs_attr_set_value(udevice, "queue/unpriv_sgio", "1", 1);
++	udev_device_unref(udevice);
++	if (ret < 0) {
++		condlog(0, "failed setting unpriv_sgio on %s: %s", mpp->alias,
++			strerror(-ret));
++		return 1;
++	}
++
++	vector_foreach_slot(mpp->pg, pgp, i) {
++		vector_foreach_slot (pgp->paths, pp, j) {
++			ret = sysfs_attr_set_value(pp->udev,
++						   "queue/unpriv_sgio", "1", 1);
++			if (ret < 0) {
++				condlog(0, "failed setting unpriv_sgio on %s: %s", mpp->alias, strerror(-ret));
++				return 1;
++			}
++		}
++	}
++	return 0;
++}
++
++int
+ sysfs_get_timeout(struct path *pp, unsigned int *timeout)
+ {
+ 	const char *attr = NULL;
+Index: multipath-tools-130222/libmultipath/discovery.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/discovery.h
++++ multipath-tools-130222/libmultipath/discovery.h
+@@ -42,6 +42,7 @@ int store_pathinfo (vector pathvec, vect
+ 		    struct path **pp_ptr);
+ int sysfs_set_scsi_tmo (struct multipath *mpp);
+ int sysfs_set_max_sectors_kb(struct multipath *mpp, int is_reload);
++int sysfs_set_unpriv_sgio(struct multipath *mpp);
+ int sysfs_get_timeout(struct path *pp, unsigned int *timeout);
+ int sysfs_get_host_pci_name(struct path *pp, char *pci_name);
+ int sysfs_get_iscsi_ip_address(struct path *pp, char *ip_address);
+Index: multipath-tools-130222/multipath/multipath.conf.5
+===================================================================
+--- multipath-tools-130222.orig/multipath/multipath.conf.5
++++ multipath-tools-130222/multipath/multipath.conf.5
+@@ -580,6 +580,11 @@ Between each attempt, multipath will sle
+ .B max_sectors_kb
+ Sets the max_sectors_kb device parameter on all path devices and the multipath
+ device to the specified value. Default is device dependent.
++.TP
++.B unpriv_sgio
++If set to \fIyes\fR, multipath will set upriv_sgio on the multipath device and
++all its paths, when it is created or reloaded. The default is
++.I no
+ .
+ .SH "blacklist section"
+ The
+@@ -693,6 +698,8 @@ section:
+ .B skip_kpartx
+ .TP
+ .B max_sectors_kb
++.TP
++.B unpriv_sgio
+ .RE
+ .PD
+ .LP
+@@ -795,6 +802,8 @@ section:
+ .B skip_kpartx
+ .TP
+ .B max_sectors_kb
++.TP
++.B unpriv_sgio
+ .RE
+ .PD
+ .LP

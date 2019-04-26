@@ -1,0 +1,38 @@
+---
+ libmultipath/uevent.c |   16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+Index: multipath-tools-130222/libmultipath/uevent.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/uevent.c
++++ multipath-tools-130222/libmultipath/uevent.c
+@@ -41,6 +41,7 @@
+ #include <sys/mman.h>
+ #include <libudev.h>
+ #include <errno.h>
++#include <poll.h>
+ 
+ #include "memory.h"
+ #include "debug.h"
+@@ -460,6 +461,21 @@ int uevent_listen(struct udev *udev)
+ 		struct uevent *uev;
+ 		struct udev_device *dev;
+                 struct udev_list_entry *list_entry;
++		struct pollfd ev_poll;
++		int fdcount;
++
++		memset(&ev_poll, 0, sizeof(struct pollfd));
++		ev_poll.fd = fd;
++		ev_poll.events = POLLIN;
++		errno = 0;
++		fdcount = poll(&ev_poll, 1, -1);
++		if (fdcount <= 0 || !(ev_poll.revents & POLLIN)) {
++			if (!errno || errno == EINTR)
++				continue;
++			condlog(0, "error receiving uevent message");
++			err = -errno;
++			break;
++		}
+ 
+ 		dev = udev_monitor_receive_device(monitor);
+ 		if (!dev) {

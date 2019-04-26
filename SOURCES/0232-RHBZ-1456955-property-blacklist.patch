@@ -1,0 +1,501 @@
+---
+ libmultipath/blacklist.c   |   79 +++++++++++++++++++++++++++++++++++++++++----
+ libmultipath/blacklist.h   |    5 ++
+ libmultipath/config.c      |   20 ++++++++++-
+ libmultipath/config.h      |    2 +
+ libmultipath/configure.c   |    8 ++++
+ libmultipath/dict.c        |   38 ++++++++++++++++++++-
+ libmultipath/discovery.c   |    2 +
+ libmultipath/print.c       |   31 +++++++++++++++++
+ multipath/multipath.conf.5 |   27 ++++++++++++++-
+ 9 files changed, 200 insertions(+), 12 deletions(-)
+
+Index: multipath-tools-130222/libmultipath/blacklist.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/blacklist.c
++++ multipath-tools-130222/libmultipath/blacklist.c
+@@ -2,6 +2,7 @@
+  * Copyright (c) 2004, 2005 Christophe Varoqui
+  */
+ #include <stdio.h>
++#include <libudev.h>
+ 
+ #include "checkers.h"
+ #include "memory.h"
+@@ -102,7 +103,7 @@ set_ble_device (vector blist, char * ven
+ }
+ 
+ int
+-_blacklist_exceptions (vector elist, char * str)
++_blacklist_exceptions (vector elist, const char * str)
+ {
+ 	int i;
+ 	struct blentry * ele;
+@@ -115,7 +116,7 @@ _blacklist_exceptions (vector elist, cha
+ }
+ 
+ int
+-_blacklist (vector blist, char * str)
++_blacklist (vector blist, const char * str)
+ {
+ 	int i;
+ 	struct blentry * ble;
+@@ -208,11 +209,14 @@ setup_default_blist (struct config * con
+ 		condlog(3, "%s: (%s:%s) %s", dev, vendor, product, (M)); \
+ 	else if (wwid)							 \
+ 		condlog(3, "%s: (%s) %s", dev, wwid, (M));		 \
++	else if (env)							 \
++		condlog(3, "%s: (%s) %s", dev, env, (M));		 \
+ 	else								 \
+ 		condlog(3, "%s: %s", dev, (M))
+ 
+ void
+-log_filter (char *dev, char *vendor, char *product, char *wwid, int r)
++log_filter (const char *dev, char *vendor, char *product, char *wwid,
++	    const char *env, int r)
+ {
+ 	/*
+ 	 * Try to sort from most likely to least.
+@@ -229,6 +233,9 @@ log_filter (char *dev, char *vendor, cha
+ 	case MATCH_DEVNODE_BLIST:
+ 		LOG_BLIST("device node name blacklisted");
+ 		break;
++	case MATCH_PROPERTY_BLIST:
++		LOG_BLIST("udev property blacklisted");
++		break;
+ 	case MATCH_DEVICE_BLIST_EXCEPT:
+ 		LOG_BLIST("vendor/product whitelisted");
+ 		break;
+@@ -238,6 +245,12 @@ log_filter (char *dev, char *vendor, cha
+ 	case MATCH_DEVNODE_BLIST_EXCEPT:
+ 		LOG_BLIST("device node name whitelisted");
+ 		break;
++	case MATCH_PROPERTY_BLIST_EXCEPT:
++		LOG_BLIST("udev property whitelisted");
++		break;
++	case MATCH_PROPERTY_BLIST_MISSING:
++		LOG_BLIST("blacklisted, udev property missing");
++		break;
+ 	}
+ }
+ 
+@@ -257,7 +270,7 @@ int
+ filter_device (vector blist, vector elist, char * vendor, char * product)
+ {
+ 	int r = _filter_device(blist, elist, vendor, product);
+-	log_filter(NULL, vendor, product, NULL, r);
++	log_filter(NULL, vendor, product, NULL, NULL, r);
+ 	return r;
+ }
+ 
+@@ -277,7 +290,7 @@ int
+ filter_devnode (vector blist, vector elist, char * dev)
+ {
+ 	int r = _filter_devnode(blist, elist, dev);
+-	log_filter(dev, NULL, NULL, NULL, r);
++	log_filter(dev, NULL, NULL, NULL, NULL, r);
+ 	return r;
+ }
+ 
+@@ -297,15 +310,67 @@ int
+ filter_wwid (vector blist, vector elist, char * wwid)
+ {
+ 	int r = _filter_wwid(blist, elist, wwid);
+-	log_filter(NULL, NULL, NULL, wwid, r);
++	log_filter(NULL, NULL, NULL, wwid, NULL, r);
+ 	return r;
+ }
+ 
+ int
++_filter_property (struct config *conf, const char *env)
++{
++	if (_blacklist_exceptions(conf->elist_property, env))
++		return MATCH_PROPERTY_BLIST_EXCEPT;
++	if (_blacklist(conf->blist_property, env))
++		return MATCH_PROPERTY_BLIST;
++
++	return 0;
++}
++
++int
++filter_property(struct config * conf, struct udev_device * udev)
++{
++	const char *devname = udev_device_get_sysname(udev);
++	struct udev_list_entry *list_entry;
++	int r;
++
++	if (!udev || (!VECTOR_SIZE(conf->elist_property) &&
++		      !VECTOR_SIZE(conf->blist_property)))
++		return 0;
++
++	udev_list_entry_foreach(list_entry,
++				udev_device_get_properties_list_entry(udev)) {
++		const char *env;
++
++		env = udev_list_entry_get_name(list_entry);
++		if (!env)
++			continue;
++
++		r = _filter_property(conf, env);
++		if (r) {
++			log_filter(devname, NULL, NULL, NULL, env, r);
++			return r;
++		}
++	}
++
++	/*
++	 * This is the inverse of the 'normal' matching;
++	 * the environment variable _has_ to match.
++	 */
++	if (VECTOR_SIZE(conf->elist_property)) {
++		log_filter(devname, NULL, NULL, NULL, NULL,
++				MATCH_PROPERTY_BLIST_MISSING);
++		return MATCH_PROPERTY_BLIST_MISSING;
++	}
++	return 0;
++}
++
++int
+ _filter_path (struct config * conf, struct path * pp)
+ {
+ 	int r;
+ 
++	r = filter_property(conf, pp->udev);
++	if (r > 0)
++		return r;
+ 	r = _filter_devnode(conf->blist_devnode, conf->elist_devnode,pp->dev);
+ 	if (r > 0)
+ 		return r;
+@@ -321,7 +386,7 @@ int
+ filter_path (struct config * conf, struct path * pp)
+ {
+ 	int r=_filter_path(conf, pp);
+-	log_filter(pp->dev, pp->vendor_id, pp->product_id, pp->wwid, r);
++	log_filter(pp->dev, pp->vendor_id, pp->product_id, pp->wwid, NULL, r);
+ 	return r;
+ }
+ 
+Index: multipath-tools-130222/libmultipath/blacklist.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/blacklist.h
++++ multipath-tools-130222/libmultipath/blacklist.h
+@@ -1,15 +1,19 @@
+ #ifndef _BLACKLIST_H
+ #define _BLACKLIST_H
+ 
++#include <libudev.h>
+ #include "regex.h"
+ 
+ #define MATCH_NOTHING       0
+ #define MATCH_WWID_BLIST    1
+ #define MATCH_DEVICE_BLIST  2
+ #define MATCH_DEVNODE_BLIST 3
++#define MATCH_PROPERTY_BLIST 4
++#define MATCH_PROPERTY_BLIST_MISSING 5
+ #define MATCH_WWID_BLIST_EXCEPT    -MATCH_WWID_BLIST
+ #define MATCH_DEVICE_BLIST_EXCEPT  -MATCH_DEVICE_BLIST
+ #define MATCH_DEVNODE_BLIST_EXCEPT -MATCH_DEVNODE_BLIST
++#define MATCH_PROPERTY_BLIST_EXCEPT -MATCH_PROPERTY_BLIST
+ 
+ struct blentry {
+ 	char * str;
+@@ -31,6 +35,7 @@ int filter_devnode (vector, vector, char
+ int filter_wwid (vector, vector, char *);
+ int filter_device (vector, vector, char *, char *);
+ int filter_path (struct config *, struct path *);
++int filter_property(struct config *, struct udev_device *);
+ int store_ble (vector, char *, int);
+ int set_ble_device (vector, char *, char *, int);
+ void free_blacklist (vector);
+Index: multipath-tools-130222/libmultipath/config.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/config.c
++++ multipath-tools-130222/libmultipath/config.c
+@@ -597,10 +597,12 @@ free_config (struct config * conf)
+ 
+ 	free_blacklist(conf->blist_devnode);
+ 	free_blacklist(conf->blist_wwid);
++	free_blacklist(conf->blist_property);
+ 	free_blacklist_device(conf->blist_device);
+ 
+ 	free_blacklist(conf->elist_devnode);
+ 	free_blacklist(conf->elist_wwid);
++	free_blacklist(conf->elist_property);
+ 	free_blacklist_device(conf->elist_device);
+ 
+ 	free_mptable(conf->mptable);
+@@ -779,8 +781,12 @@ load_config (char * file, struct udev *u
+ 		if (!conf->blist_device)
+ 			goto out;
+ 	}
+-	if (setup_default_blist(conf))
+-		goto out;
++	if (conf->blist_property == NULL) {
++		conf->blist_property = vector_alloc();
++
++		if (!conf->blist_property)
++			goto out;
++	}
+ 
+ 	if (conf->elist_devnode == NULL) {
+ 		conf->elist_devnode = vector_alloc();
+@@ -802,6 +808,16 @@ load_config (char * file, struct udev *u
+ 			goto out;
+ 	}
+ 
++	if (conf->elist_property == NULL) {
++		conf->elist_property = vector_alloc();
++
++		if (!conf->elist_property)
++			goto out;
++	}
++
++	if (setup_default_blist(conf))
++		goto out;
++
+ 	if (conf->mptable == NULL) {
+ 		conf->mptable = vector_alloc();
+ 		if (!conf->mptable)
+Index: multipath-tools-130222/libmultipath/config.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/config.h
++++ multipath-tools-130222/libmultipath/config.h
+@@ -189,9 +189,11 @@ struct config {
+ 	vector blist_devnode;
+ 	vector blist_wwid;
+ 	vector blist_device;
++	vector blist_property;
+ 	vector elist_devnode;
+ 	vector elist_wwid;
+ 	vector elist_device;
++	vector elist_property;
+ };
+ 
+ struct config * conf;
+Index: multipath-tools-130222/libmultipath/configure.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/configure.c
++++ multipath-tools-130222/libmultipath/configure.c
+@@ -1027,6 +1027,10 @@ get_refwwid (char * dev, enum devtypes d
+ 				return ret;
+ 			}
+ 		}
++		if (pp->udev && pp->uid_attribute &&
++		    filter_property(conf, pp->udev) > 0)
++			return 2;
++
+ 		refwwid = pp->wwid;
+ 		goto out;
+ 	}
+@@ -1051,6 +1055,10 @@ get_refwwid (char * dev, enum devtypes d
+ 				return ret;
+ 			}
+ 		}
++		if (pp->udev && pp->uid_attribute &&
++		    filter_property(conf, pp->udev) > 0)
++			return 2;
++
+ 		refwwid = pp->wwid;
+ 		goto out;
+ 	}
+Index: multipath-tools-130222/libmultipath/dict.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/dict.c
++++ multipath-tools-130222/libmultipath/dict.c
+@@ -1063,8 +1063,11 @@ blacklist_handler(vector strvec)
+ 		conf->blist_wwid = vector_alloc();
+ 	if (!conf->blist_device)
+ 		conf->blist_device = vector_alloc();
++	if (!conf->blist_property)
++		conf->blist_property = vector_alloc();
+ 
+-	if (!conf->blist_devnode || !conf->blist_wwid || !conf->blist_device)
++	if (!conf->blist_devnode || !conf->blist_wwid ||
++	    !conf->blist_device || !conf->blist_property)
+ 		return 1;
+ 
+ 	return 0;
+@@ -1079,8 +1082,11 @@ blacklist_exceptions_handler(vector strv
+ 		conf->elist_wwid = vector_alloc();
+ 	if (!conf->elist_device)
+ 		conf->elist_device = vector_alloc();
++	if (!conf->elist_property)
++		conf->elist_property = vector_alloc();
+ 
+-	if (!conf->elist_devnode || !conf->elist_wwid || !conf->elist_device)
++	if (!conf->elist_devnode || !conf->elist_wwid ||
++	    !conf->elist_device || !conf->elist_property)
+ 		return 1;
+ 
+ 	return 0;
+@@ -1139,6 +1145,32 @@ ble_except_wwid_handler(vector strvec)
+ }
+ 
+ static int
++ble_property_handler(vector strvec)
++{
++	char * buff;
++
++	buff = set_value(strvec);
++
++	if (!buff)
++		return 1;
++
++	return store_ble(conf->blist_property, buff, ORIGIN_CONFIG);
++}
++
++static int
++ble_except_property_handler(vector strvec)
++{
++	char * buff;
++
++	buff = set_value(strvec);
++
++	if (!buff)
++		return 1;
++
++	return store_ble(conf->elist_property, buff, ORIGIN_CONFIG);
++}
++
++static int
+ ble_device_handler(vector strvec)
+ {
+ 	return alloc_ble_device(conf->blist_device);
+@@ -3903,6 +3935,7 @@ init_keywords(void)
+ 	install_keyword_root("blacklist", &blacklist_handler);
+ 	install_keyword_multi("devnode", &ble_devnode_handler, &snprint_ble_simple);
+ 	install_keyword_multi("wwid", &ble_wwid_handler, &snprint_ble_simple);
++	install_keyword_multi("property", &ble_property_handler, &snprint_ble_simple);
+ 	install_keyword_multi("device", &ble_device_handler, NULL);
+ 	install_sublevel();
+ 	install_keyword("vendor", &ble_vendor_handler, &snprint_bled_vendor);
+@@ -3911,6 +3944,7 @@ init_keywords(void)
+ 	install_keyword_root("blacklist_exceptions", &blacklist_exceptions_handler);
+ 	install_keyword_multi("devnode", &ble_except_devnode_handler, &snprint_ble_simple);
+ 	install_keyword_multi("wwid", &ble_except_wwid_handler, &snprint_ble_simple);
++	install_keyword_multi("property", &ble_except_property_handler, &snprint_ble_simple);
+ 	install_keyword_multi("device", &ble_except_device_handler, NULL);
+ 	install_sublevel();
+ 	install_keyword("vendor", &ble_except_vendor_handler, &snprint_bled_vendor);
+Index: multipath-tools-130222/libmultipath/discovery.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/discovery.c
++++ multipath-tools-130222/libmultipath/discovery.c
+@@ -1332,6 +1332,8 @@ pathinfo (struct path *pp, vector hwtabl
+ 	 * limited by DI_BLACKLIST and occurs before this debug
+ 	 * message with the mask value.
+ 	 */
++	if (pp->udev && filter_property(conf, pp->udev) > 0)
++		return PATHINFO_SKIPPED;
+ 	if (filter_devnode(conf->blist_devnode,
+ 			   conf->elist_devnode,
+ 			   pp->dev) > 0)
+Index: multipath-tools-130222/libmultipath/print.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/print.c
++++ multipath-tools-130222/libmultipath/print.c
+@@ -1415,6 +1415,19 @@ snprint_blacklist_report (char * buff, i
+ 
+ 	if ((len - fwd - threshold) <= 0)
+ 		return len;
++	fwd += snprintf(buff + fwd, len - fwd, "udev property rules:\n"
++					       "- blacklist:\n");
++	if (!snprint_blacklist_group(buff, len, &fwd, &conf->blist_property))
++		return len;
++
++	if ((len - fwd - threshold) <= 0)
++		return len;
++	fwd += snprintf(buff + fwd, len - fwd, "- exceptions:\n");
++	if (snprint_blacklist_group(buff, len, &fwd, &conf->elist_property) == 0)
++		return len;
++
++	if ((len - fwd - threshold) <= 0)
++		return len;
+ 	fwd += snprintf(buff + fwd, len - fwd, "wwid rules:\n"
+ 					       "- blacklist:\n");
+ 	if (snprint_blacklist_group(buff, len, &fwd, &conf->blist_wwid) == 0)
+@@ -1480,6 +1493,15 @@ snprint_blacklist (char * buff, int len)
+ 		if (fwd > len)
+ 			return len;
+ 	}
++	vector_foreach_slot (conf->blist_property, ble, i) {
++		kw = find_keyword(rootkw->sub, "property");
++		if (!kw)
++			return 0;
++		fwd += snprint_keyword(buff + fwd, len - fwd, "\t%k %v\n",
++				       kw, ble);
++		if (fwd > len)
++			return len;
++	}
+ 	rootkw = find_keyword(rootkw->sub, "device");
+ 	if (!rootkw)
+ 		return 0;
+@@ -1544,6 +1566,15 @@ snprint_blacklist_except (char * buff, i
+ 		if (!kw)
+ 			return 0;
+ 		fwd += snprint_keyword(buff + fwd, len - fwd, "\t%k %v\n",
++				       kw, ele);
++		if (fwd > len)
++			return len;
++	}
++	vector_foreach_slot (conf->elist_property, ele, i) {
++		kw = find_keyword(rootkw->sub, "property");
++		if (!kw)
++			return 0;
++		fwd += snprint_keyword(buff + fwd, len - fwd, "\t%k %v\n",
+ 				       kw, ele);
+ 		if (fwd > len)
+ 			return len;
+Index: multipath-tools-130222/multipath/multipath.conf.5
+===================================================================
+--- multipath-tools-130222.orig/multipath/multipath.conf.5
++++ multipath-tools-130222/multipath/multipath.conf.5
+@@ -626,6 +626,9 @@ The \fIWorld Wide Identification\fR of a
+ .B devnode
+ Regular expression of the device nodes to be excluded.
+ .TP
++.B property
++Regular expresion of the udev property to be excluded.
++.TP
+ .B device
+ Subsection for the device description. This subsection recognizes the
+ .I vendor
+@@ -650,8 +653,11 @@ The following keywords are recognized:
+ .B wwid
+ The \fIWorld Wide Identification\fR of a device.
+ .TP
++.B property
++Regular expresion of the udev property to be whitelisted.
++.TP
+ .B devnode
+-Regular expression of the device nodes to be excluded.
++Regular expression of the device nodes to be whitelisted.
+ .TP
+ .B device
+ Subsection for the device description. This subsection recognizes the
+@@ -661,6 +667,25 @@ and
+ keywords. For a full description of these keywords please see the
+ .I devices
+ section description.
++.LP
++The
++.I property
++blacklist and whitelist handling is different from the usual handling
++in the sense that if the whitelist is set, it
++.B has
++to match, otherwise the device will be blacklisted.
++In these cases the message
++.I blacklisted, udev property missing
++will be displayed. For example settting the
++.I property
++blacklist_exception to
++.I (SCSI_IDENT_|ID_WWN)
++will blacklist all devices that have no udev property whose name regex matches
++either
++.I SCSI_IDENT_
++or
++.I ID_WWN.
++This works to exclude most non-multipathable devices.
+ .SH "multipaths section"
+ The only recognized attribute for the
+ .B multipaths

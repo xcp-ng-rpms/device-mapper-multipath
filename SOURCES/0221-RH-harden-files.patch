@@ -1,0 +1,101 @@
+---
+ Makefile.inc             |    2 +-
+ kpartx/Makefile          |    4 ++--
+ libmpathpersist/Makefile |    2 +-
+ mpathpersist/Makefile    |    4 ++--
+ multipath/Makefile       |    4 ++--
+ multipathd/Makefile      |    2 +-
+ 6 files changed, 9 insertions(+), 9 deletions(-)
+
+Index: multipath-tools-130222/Makefile.inc
+===================================================================
+--- multipath-tools-130222.orig/Makefile.inc
++++ multipath-tools-130222/Makefile.inc
+@@ -48,7 +48,7 @@ ifndef RPM_OPT_FLAGS
+ 	RPM_OPT_FLAGS = -O2 -g -pipe -Wformat-security -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong --param=ssp-buffer-size=4
+ endif
+ 
+-LDFLAGS     += -Wl,-z,relro
++LDFLAGS     += -Wl,-z,relro -Wl,-z,now
+ OPTFLAGS     = $(RPM_OPT_FLAGS) -Wunused -Wstrict-prototypes
+ CFLAGS	     = $(OPTFLAGS) -DLIB_STRING=\"${LIB}\"
+ SHARED_FLAGS = -shared
+Index: multipath-tools-130222/kpartx/Makefile
+===================================================================
+--- multipath-tools-130222.orig/kpartx/Makefile
++++ multipath-tools-130222/kpartx/Makefile
+@@ -4,7 +4,7 @@
+ #
+ include ../Makefile.inc
+ 
+-CFLAGS += -fPIC -I. -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64
++CFLAGS += -fPIE -DPIE -I. -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64
+ 
+ LIBDM_API_COOKIE = $(shell grep -Ecs '^[a-z]*[[:space:]]+dm_task_set_cookie' /usr/include/libdevmapper.h)
+ 
+@@ -12,7 +12,7 @@ ifneq ($(strip $(LIBDM_API_COOKIE)),0)
+ 	CFLAGS += -DLIBDM_API_COOKIE
+ endif
+ 
+-LDFLAGS = -ldevmapper
++LDFLAGS += -ldevmapper -pie
+ OBJS = bsd.o dos.o kpartx.o solaris.o unixware.o dasd.o sun.o \
+        gpt.o mac.o ps3.o crc32.o lopart.o xstrncpy.o devmapper.o
+ EXEC = kpartx
+Index: multipath-tools-130222/libmpathpersist/Makefile
+===================================================================
+--- multipath-tools-130222.orig/libmpathpersist/Makefile
++++ multipath-tools-130222/libmpathpersist/Makefile
+@@ -21,7 +21,7 @@ all: $(LIBS)
+ 
+ $(LIBS): 
+ 	$(CC) -Wall -c $(CFLAGS) *.c
+-	$(CC)  -shared $(LIBDEPS) -Wl,-soname=$@ $(CFLAGS) -o $@ $(OBJS)
++	$(CC) $(LDFLAGS) -shared $(LIBDEPS) -Wl,-soname=$@ $(CFLAGS) -o $@ $(OBJS)
+ 	ln -s $(LIBS) $(DEVLIB)
+ 	$(GZIP) mpath_persistent_reserve_in.3 > mpath_persistent_reserve_in.3.gz	
+ 	$(GZIP) mpath_persistent_reserve_out.3 > mpath_persistent_reserve_out.3.gz	
+Index: multipath-tools-130222/mpathpersist/Makefile
+===================================================================
+--- multipath-tools-130222.orig/mpathpersist/Makefile
++++ multipath-tools-130222/mpathpersist/Makefile
+@@ -4,8 +4,8 @@ include ../Makefile.inc
+ 
+ OBJS = main.o 
+ 
+-CFLAGS += -I$(multipathdir) -I$(mpathpersistdir) 
+-LDFLAGS += -lpthread -ldevmapper -L$(mpathpersistdir) -lmpathpersist -L$(multipathdir) -L$(mpathcmddir) -lmpathcmd -lmultipath -ludev
++CFLAGS += -fPIE -DPIE -I$(multipathdir) -I$(mpathpersistdir)
++LDFLAGS += -lpthread -ldevmapper -L$(mpathpersistdir) -lmpathpersist -L$(multipathdir) -L$(mpathcmddir) -lmpathcmd -lmultipath -ludev -pie
+ 
+ EXEC = mpathpersist
+ 
+Index: multipath-tools-130222/multipath/Makefile
+===================================================================
+--- multipath-tools-130222.orig/multipath/Makefile
++++ multipath-tools-130222/multipath/Makefile
+@@ -6,9 +6,9 @@ include ../Makefile.inc
+ 
+ OBJS = main.o
+ 
+-CFLAGS += -I$(multipathdir) -I$(mpathcmddir)
++CFLAGS += -fPIE -DPIE -I$(multipathdir) -I$(mpathcmddir)
+ LDFLAGS += -lpthread -ldevmapper -ldl -L$(multipathdir) -lmultipath -ludev \
+-	-L$(mpathcmddir) -lmpathcmd
++	-L$(mpathcmddir) -lmpathcmd -pie
+ 
+ EXEC = multipath
+ 
+Index: multipath-tools-130222/multipathd/Makefile
+===================================================================
+--- multipath-tools-130222.orig/multipathd/Makefile
++++ multipath-tools-130222/multipathd/Makefile
+@@ -8,7 +8,7 @@ include ../Makefile.inc
+ CFLAGS += -fPIE -DPIE -I$(multipathdir) -I$(mpathpersistdir) -I$(mpathcmddir)
+ LDFLAGS += -lpthread -ldevmapper -lreadline -ludev -ldl \
+ 	   -L$(multipathdir) -lmultipath -L$(mpathpersistdir) -lmpathpersist \
+-	   -L$(mpathcmddir) -lmpathcmd -Wl,-z,now -pie
++	   -L$(mpathcmddir) -lmpathcmd -pie
+ 
+ #
+ # debuging stuff

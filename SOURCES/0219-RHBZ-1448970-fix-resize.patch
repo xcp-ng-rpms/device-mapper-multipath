@@ -1,0 +1,149 @@
+---
+ libmultipath/configure.c |   18 +++------------
+ libmultipath/devmapper.c |   55 +++++++++++++++++++++++++++++++++++++++++------
+ libmultipath/devmapper.h |    3 +-
+ 3 files changed, 55 insertions(+), 21 deletions(-)
+
+Index: multipath-tools-130222/libmultipath/configure.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/configure.c
++++ multipath-tools-130222/libmultipath/configure.c
+@@ -616,7 +616,6 @@ extern int
+ domap (struct multipath * mpp, char * params)
+ {
+ 	int r = 0;
+-	uint16_t udev_flags = ((mpp->force_udev_reload)? 0 : MPATH_UDEV_RELOAD_FLAG) | ((mpp->skip_kpartx == SKIP_KPARTX_ON)? MPATH_UDEV_NO_KPARTX_FLAG : 0) | ((mpp->nr_active)? 0 : MPATH_UDEV_NO_PATHS_FLAG);
+ 
+ 	/*
+ 	 * last chance to quit before touching the devmaps
+@@ -660,17 +659,11 @@ domap (struct multipath * mpp, char * pa
+ 		break;
+ 
+ 	case ACT_RELOAD:
+-		r = dm_addmap_reload(mpp, params);
+-		if (r)
+-			r = dm_simplecmd_noflush(DM_DEVICE_RESUME, mpp->alias,
+-						 udev_flags);
++		r = dm_addmap_reload(mpp, params, 0);
+ 		break;
+ 
+ 	case ACT_RESIZE:
+-		r = dm_addmap_reload(mpp, params);
+-		if (r)
+-			r = dm_simplecmd_flush(DM_DEVICE_RESUME, mpp->alias, 1,
+-					       udev_flags);
++		r = dm_addmap_reload(mpp, params, 1);
+ 		break;
+ 
+ 	case ACT_RENAME:
+@@ -679,11 +672,8 @@ domap (struct multipath * mpp, char * pa
+ 
+ 	case ACT_RENAME2:
+ 		r = dm_rename(mpp->alias_old, mpp->alias, mpp->skip_kpartx);
+-		if (r) {
+-			r = dm_addmap_reload(mpp, params);
+-			if (r)
+-				r = dm_simplecmd_noflush(DM_DEVICE_RESUME, mpp->alias, udev_flags);
+-		}
++		if (r)
++			r = dm_addmap_reload(mpp, params, 0);
+ 		break;
+ 
+ 	default:
+Index: multipath-tools-130222/libmultipath/devmapper.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/devmapper.c
++++ multipath-tools-130222/libmultipath/devmapper.c
+@@ -356,15 +356,33 @@ dm_addmap_create (struct multipath *mpp,
+ #define ADDMAP_RO 1
+ 
+ extern int
+-dm_addmap_reload (struct multipath *mpp, char *params) {
++dm_addmap_reload (struct multipath *mpp, char *params, int flush) {
++	int r = 0;
++	uint16_t udev_flags = ((mpp->force_udev_reload)?
++			       0 : MPATH_UDEV_RELOAD_FLAG) |
++			      ((mpp->skip_kpartx == SKIP_KPARTX_ON)?
++			       MPATH_UDEV_NO_KPARTX_FLAG : 0) |
++			      ((mpp->nr_active)? 0 : MPATH_UDEV_NO_PATHS_FLAG);
++
+ 	sysfs_set_max_sectors_kb(mpp, 1);
+-	if (!mpp->force_readonly) {
+-		if (dm_addmap(DM_DEVICE_RELOAD, TGT_MPATH, mpp, params, 0, ADDMAP_RW, SKIP_KPARTX_OFF))
+-			return 1;
+-		if (errno != EROFS)
++	if (!mpp->force_readonly)
++		r = dm_addmap(DM_DEVICE_RELOAD, TGT_MPATH, mpp, params, 0,
++			      ADDMAP_RW, SKIP_KPARTX_OFF);
++	if (!r) {
++		if (!mpp->force_readonly && errno != EROFS)
+ 			return 0;
++		r = dm_addmap(DM_DEVICE_RELOAD, TGT_MPATH, mpp, params, 0,
++			      ADDMAP_RO, SKIP_KPARTX_OFF);
+ 	}
+-	return dm_addmap(DM_DEVICE_RELOAD, TGT_MPATH, mpp, params, 0, ADDMAP_RO, SKIP_KPARTX_OFF);
++	if (r)
++		r = dm_simplecmd(DM_DEVICE_RESUME, mpp->alias, !flush,
++				 1, udev_flags, 0);
++	if (r)
++		return r;
++	if (dm_is_suspended(mpp->alias))
++		dm_simplecmd(DM_DEVICE_RESUME, mpp->alias, !flush, 1,
++			     udev_flags, 0);
++	return 0;
+ }
+ 
+ extern int
+@@ -613,6 +631,31 @@ dm_is_mpath(const char * name)
+ out:
+ 	dm_task_destroy(dmt);
+ 	return r;
++}
++
++int
++dm_is_suspended(const char *mapname)
++{
++	int r = -1;
++	struct dm_task *dmt;
++	struct dm_info info;
++
++	if (!(dmt = dm_task_create(DM_DEVICE_INFO)))
++		return r;
++
++	if (!dm_task_set_name(dmt, mapname))
++		goto out;
++
++	if (!dm_task_run(dmt))
++		goto out;
++
++	if (!dm_task_get_info(dmt, &info) || !info.exists)
++		goto out;
++
++	r = info.suspended;
++out:
++	dm_task_destroy(dmt);
++	return r;
+ }
+ 
+ static int
+Index: multipath-tools-130222/libmultipath/devmapper.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/devmapper.h
++++ multipath-tools-130222/libmultipath/devmapper.h
+@@ -30,7 +30,7 @@ int dm_drv_version (unsigned int * versi
+ int dm_simplecmd_flush (int, const char *, int, uint16_t);
+ int dm_simplecmd_noflush (int, const char *, uint16_t);
+ int dm_addmap_create (struct multipath *mpp, char *params);
+-int dm_addmap_reload (struct multipath *mpp, char *params);
++int dm_addmap_reload (struct multipath *mpp, char *params, int flush);
+ int dm_map_present (const char *);
+ int dm_get_map(const char *, unsigned long long *, char *);
+ int dm_get_status(char *, char *);
+@@ -51,6 +51,7 @@ int dm_switchgroup(char * mapname, int i
+ int dm_enablegroup(char * mapname, int index);
+ int dm_disablegroup(char * mapname, int index);
+ int dm_get_maps (vector mp);
++int dm_is_suspended(const char *mapname);
+ int dm_geteventnr (char *name);
+ int dm_get_major (char *name);
+ int dm_get_minor (char *name);

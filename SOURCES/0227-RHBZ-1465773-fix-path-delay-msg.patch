@@ -1,0 +1,17 @@
+---
+ multipathd/main.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+Index: multipath-tools-130222/multipathd/main.c
+===================================================================
+--- multipath-tools-130222.orig/multipathd/main.c
++++ multipath-tools-130222/multipathd/main.c
+@@ -538,7 +538,7 @@ ev_add_path (struct path * pp, struct ve
+ 		     pp->tpgs == TPGS_IMPLICIT))
+ 			mpp->force_udev_reload = 1;
+ 		else {
+-			condlog(2, "%s : delaying path addition until %s is fully initialized", pp->dev, mpp->alias);
++			condlog(2, "%s [%s]: delaying path addition until %s is fully initialized", pp->dev, pp->dev_t, mpp->alias);
+ 			mpp->wait_for_udev = 2;
+ 			orphan_path(pp);
+ 			return 0;

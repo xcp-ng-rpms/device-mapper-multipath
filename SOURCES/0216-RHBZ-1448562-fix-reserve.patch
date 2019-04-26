@@ -1,0 +1,122 @@
+---
+ libmpathpersist/mpath_persist.c |   43 +++++++++++++++++++++++++---------------
+ libmpathpersist/mpath_persist.h |    4 ++-
+ 2 files changed, 30 insertions(+), 17 deletions(-)
+
+Index: multipath-tools-130222/libmpathpersist/mpath_persist.c
+===================================================================
+--- multipath-tools-130222.orig/libmpathpersist/mpath_persist.c
++++ multipath-tools-130222/libmpathpersist/mpath_persist.c
+@@ -440,7 +440,7 @@ int mpath_prout_reg(struct multipath *mp
+ 		thread[i].param.rq_type = rq_type;
+ 		thread[i].param.paramp = paramp;
+ 		thread[i].param.noisy = noisy;
+-		thread[i].param.status = -1;
++		thread[i].param.status = MPATH_PR_SKIP;
+ 
+ 		condlog (3, "THRED ID [%d] INFO]", i);
+ 		condlog (3, "rq_servact=%d ", thread[i].param.rq_servact);
+@@ -476,14 +476,17 @@ int mpath_prout_reg(struct multipath *mp
+ 			rc = pthread_create(&thread[count].id, &attr, mpath_prout_pthread_fn, (void *)(&thread[count].param));
+ 			if (rc){
+ 				condlog (0, "%s: failed to create thread %d", mpp->wwid, rc);
++				thread[count].param.status = MPATH_PR_THREAD_ERROR;
+ 			}
+ 			count = count +1;
+ 		}
+ 	}
+ 	for( i=0; i < active_pathcount ; i++){
+-		rc = pthread_join(thread[i].id, NULL);
+-		if (rc){
+-			condlog (0, "%s: Thread[%d] failed to join thread %d", mpp->wwid, i, rc);
++		if (thread[i].param.status != MPATH_PR_THREAD_ERROR) {
++			rc = pthread_join(thread[i].id, NULL);
++			if (rc){
++				condlog (0, "%s: Thread[%d] failed to join thread %d", mpp->wwid, i, rc);
++			}
+ 		}
+ 		if (!rollback && (thread[i].param.status == MPATH_PR_RESERV_CONFLICT)){
+ 			rollback = 1;
+@@ -502,23 +505,27 @@ int mpath_prout_reg(struct multipath *mp
+ 	if (rollback && ((rq_servact == MPATH_PROUT_REG_SA) && sa_key != 0 )){
+ 		condlog (3, "%s: ERROR: initiating pr out rollback", mpp->wwid);
+ 		for( i=0 ; i < active_pathcount ; i++){
+-			if((thread[i].param.status == MPATH_PR_SUCCESS) &&
+-					((pp->state == PATH_UP) || (pp->state == PATH_GHOST))){
++			if (thread[i].param.status == MPATH_PR_SUCCESS) {
+ 				memcpy(&thread[i].param.paramp->key, &thread[i].param.paramp->sa_key, 8);
+ 				memset(&thread[i].param.paramp->sa_key, 0, 8);
+ 				thread[i].param.status = MPATH_PR_SUCCESS;
+ 				rc = pthread_create(&thread[i].id, &attr, mpath_prout_pthread_fn, 
+-						(void *)(&thread[count].param));
++						(void *)(&thread[i].param));
+ 				if (rc){
+ 					condlog (0, "%s: failed to create thread for rollback. %d",  mpp->wwid, rc);
++					thread[i].param.status = MPATH_PR_THREAD_ERROR;
+ 				}
+-			}
++			} else
++				thread[i].param.status = MPATH_PR_SKIP;
+ 		}
+ 		for(i=0; i < active_pathcount ; i++){
+-			rc = pthread_join(thread[i].id, NULL);
+-			if (rc){
+-				condlog (3, "%s: failed to join thread while rolling back %d",
+-						mpp->wwid, i);
++			if (thread[i].param.status != MPATH_PR_SKIP &&
++			    thread[i].param.status != MPATH_PR_THREAD_ERROR) {
++				rc = pthread_join(thread[i].id, NULL);
++				if (rc){
++					condlog (3, "%s: failed to join thread while rolling back %d",
++						 mpp->wwid, i);
++				}
+ 			}
+ 		}
+ 	}
+@@ -649,16 +656,20 @@ int mpath_prout_rel(struct multipath *mp
+ 			condlog (3, "%s: sending pr out command to %s", mpp->wwid, pp->dev);
+ 			rc = pthread_create (&thread[count].id, &attr, mpath_prout_pthread_fn,
+ 					(void *) (&thread[count].param));
+-			if (rc)
++			if (rc) {
+ 				condlog (0, "%s: failed to create thread. %d",  mpp->wwid, rc);
++				thread[count].param.status = MPATH_PR_THREAD_ERROR;
++			}
+ 			count = count + 1;
+ 		}
+ 	}
+ 	pthread_attr_destroy (&attr);
+ 	for (i = 0; i < active_pathcount; i++){
+-		rc = pthread_join (thread[i].id, NULL);
+-		if (rc){
+-			condlog (1, "%s: failed to join thread.  %d",  mpp->wwid,  rc);
++		if (thread[i].param.status != MPATH_PR_THREAD_ERROR) {
++			rc = pthread_join (thread[i].id, NULL);
++			if (rc){
++				condlog (1, "%s: failed to join thread.  %d",  mpp->wwid,  rc);
++			}
+ 		}
+ 	}
+ 
+Index: multipath-tools-130222/libmpathpersist/mpath_persist.h
+===================================================================
+--- multipath-tools-130222.orig/libmpathpersist/mpath_persist.h
++++ multipath-tools-130222/libmpathpersist/mpath_persist.h
+@@ -43,6 +43,7 @@ extern "C" {
+ 
+ 
+ /* PR RETURN_STATUS */
++#define MPATH_PR_SKIP			-1  /* skipping this path */
+ #define MPATH_PR_SUCCESS 		0
+ #define MPATH_PR_SYNTAX_ERROR		1   /*  syntax error or invalid parameter */
+ 					    /* status for check condition */
+@@ -59,7 +60,8 @@ extern "C" {
+ #define MPATH_PR_RESERV_CONFLICT	11  /* Reservation conflict on the device */
+ #define MPATH_PR_FILE_ERROR		12  /* file (device node) problems(e.g. not found)*/
+ #define MPATH_PR_DMMP_ERROR		13  /* DMMP related error.(e.g Error in getting dm info */
+-#define MPATH_PR_OTHER			14  /*other error/warning has occurred(transport
++#define MPATH_PR_THREAD_ERROR		14  /* pthreads error (e.g. unable to create new thread) */
++#define MPATH_PR_OTHER			15  /*other error/warning has occurred(transport
+ 					      or driver error) */
+ 
+ /* PR MASK */

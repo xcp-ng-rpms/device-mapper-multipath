@@ -1,0 +1,81 @@
+---
+ libmultipath/devmapper.c |   31 +++++++++++++++++++++----------
+ 1 file changed, 21 insertions(+), 10 deletions(-)
+
+Index: multipath-tools-130222/libmultipath/devmapper.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/devmapper.c
++++ multipath-tools-130222/libmultipath/devmapper.c
+@@ -264,12 +264,15 @@ dm_device_remove (const char *name, int
+ 
+ static int
+ dm_addmap (int task, const char *target, struct multipath *mpp, char * params,
+-	   int use_uuid, int ro, int skip_kpartx) {
++	   int use_uuid, int ro, uint16_t udev_flags) {
+ 	int r = 0;
+ 	struct dm_task *dmt;
+ 	char *prefixed_uuid = NULL;
+ 	uint32_t cookie = 0;
+-	uint16_t udev_flags = ((conf->daemon)? DM_UDEV_DISABLE_LIBRARY_FALLBACK : 0) | ((skip_kpartx == SKIP_KPARTX_ON)? MPATH_UDEV_NO_KPARTX_FLAG : 0);
++
++	/* Need to add this here to allow 0 to be passed in udev_flags */
++	if (conf->daemon)
++		udev_flags |= DM_UDEV_DISABLE_LIBRARY_FALLBACK;
+ 
+ 	if (!(dmt = dm_task_create (task)))
+ 		return 0;
+@@ -326,16 +329,28 @@ dm_addmap (int task, const char *target,
+ 	return r;
+ }
+ 
++static uint16_t build_udev_flags(const struct multipath *mpp, int reload)
++{
++	/* DM_UDEV_DISABLE_LIBRARY_FALLBACK is added in dm_addmap */
++	return  (mpp->skip_kpartx == SKIP_KPARTX_ON ?
++		 MPATH_UDEV_NO_KPARTX_FLAG : 0) |
++		(mpp->nr_active == 0 ?
++		 MPATH_UDEV_NO_PATHS_FLAG : 0) |
++		(reload && !mpp->force_udev_reload ?
++		 MPATH_UDEV_RELOAD_FLAG : 0);
++}
++
+ extern int
+ dm_addmap_create (struct multipath *mpp, char * params) {
+ 	int ro;
++	uint16_t udev_flags = build_udev_flags(mpp, 0);
+ 
+ 	sysfs_set_max_sectors_kb(mpp, 0);
+ 	for (ro = 0; ro <= 1; ro++) {
+ 		int err;
+ 
+ 		if (dm_addmap(DM_DEVICE_CREATE, TGT_MPATH,
+-			      mpp, params, 1, ro, mpp->skip_kpartx))
++			      mpp, params, 1, ro, udev_flags))
+ 			return 1;
+ 		/*
+ 		 * DM_DEVICE_CREATE is actually DM_DEV_CREATE + DM_TABLE_LOAD.
+@@ -358,21 +373,17 @@ dm_addmap_create (struct multipath *mpp,
+ extern int
+ dm_addmap_reload (struct multipath *mpp, char *params, int flush) {
+ 	int r = 0;
+-	uint16_t udev_flags = ((mpp->force_udev_reload)?
+-			       0 : MPATH_UDEV_RELOAD_FLAG) |
+-			      ((mpp->skip_kpartx == SKIP_KPARTX_ON)?
+-			       MPATH_UDEV_NO_KPARTX_FLAG : 0) |
+-			      ((mpp->nr_active)? 0 : MPATH_UDEV_NO_PATHS_FLAG);
++	uint16_t udev_flags = build_udev_flags(mpp, 1);
+ 
+ 	sysfs_set_max_sectors_kb(mpp, 1);
+ 	if (!mpp->force_readonly)
+ 		r = dm_addmap(DM_DEVICE_RELOAD, TGT_MPATH, mpp, params, 0,
+-			      ADDMAP_RW, SKIP_KPARTX_OFF);
++			      ADDMAP_RW, 0);
+ 	if (!r) {
+ 		if (!mpp->force_readonly && errno != EROFS)
+ 			return 0;
+ 		r = dm_addmap(DM_DEVICE_RELOAD, TGT_MPATH, mpp, params, 0,
+-			      ADDMAP_RO, SKIP_KPARTX_OFF);
++			      ADDMAP_RO, 0);
+ 	}
+ 	if (r)
+ 		r = dm_simplecmd(DM_DEVICE_RESUME, mpp->alias, !flush,
