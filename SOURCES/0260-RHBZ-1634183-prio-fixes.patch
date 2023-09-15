@@ -1,0 +1,67 @@
+---
+ libmultipath/discovery.c        |   15 +++++++++++++--
+ libmultipath/pgpolicies.c       |    2 +-
+ libmultipath/prioritizers/ana.c |    2 +-
+ 3 files changed, 15 insertions(+), 4 deletions(-)
+
+Index: multipath-tools-130222/libmultipath/discovery.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/discovery.c
++++ multipath-tools-130222/libmultipath/discovery.c
+@@ -1234,6 +1234,7 @@ get_state (struct path * pp, int daemon,
+ static int
+ get_prio (struct path * pp)
+ {
++	int old_prio;
+ 	if (!pp)
+ 		return 0;
+ 
+@@ -1247,10 +1248,20 @@ get_prio (struct path * pp)
+ 			return 1;
+ 		}
+ 	}
++	old_prio = pp->priority;
+ 	pp->priority = prio_getprio(p, pp);
+ 	if (pp->priority < 0) {
+-		condlog(3, "%s: %s prio error", pp->dev, prio_name(p));
+-		pp->priority = PRIO_UNDEF;
++		/* this changes pp->offline, but why not */
++		int state = path_offline(pp);
++
++		if (state == PATH_DOWN || state == PATH_PENDING) {
++			pp->priority = old_prio;
++			condlog(3, "%s: %s prio error in state %d, keeping prio = %d", pp->dev, prio_name(p), state, pp->priority);
++		} else {
++			condlog(3, "%s: %s prio error in state %d",
++				pp->dev, prio_name(p), state);
++			pp->priority = PRIO_UNDEF;
++		}
+ 		return 1;
+ 	}
+ 	condlog(3, "%s: %s prio = %u",
+Index: multipath-tools-130222/libmultipath/pgpolicies.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/pgpolicies.c
++++ multipath-tools-130222/libmultipath/pgpolicies.c
+@@ -308,7 +308,7 @@ extern int
+ group_by_prio (struct multipath * mp)
+ {
+ 	int i;
+-	unsigned int prio;
++	int prio;
+ 	struct path * pp;
+ 	struct pathgroup * pgp;
+ 
+Index: multipath-tools-130222/libmultipath/prioritizers/ana.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/prioritizers/ana.c
++++ multipath-tools-130222/libmultipath/prioritizers/ana.c
+@@ -165,7 +165,7 @@ int get_ana_info(struct path * pp, unsig
+ 				   ana_log, ana_log_len);
+ 	pthread_cleanup_pop(1);
+ 	if (rc >= 0)
+-		condlog(3, "%s: ana state = %02x [%s]", pp->dev, rc,
++		condlog(4, "%s: ana state = %02x [%s]", pp->dev, rc,
+ 			aas_print_string(rc));
+ 	return rc;
+ }

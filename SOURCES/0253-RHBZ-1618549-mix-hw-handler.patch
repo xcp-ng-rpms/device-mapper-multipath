@@ -1,0 +1,104 @@
+---
+ libmultipath/configure.c |    2 -
+ libmultipath/propsel.c   |   58 +++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 59 insertions(+), 1 deletion(-)
+
+Index: multipath-tools-130222/libmultipath/configure.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/configure.c
++++ multipath-tools-130222/libmultipath/configure.c
+@@ -282,6 +282,7 @@ setup_map (struct multipath * mpp, char
+ 	select_pgpolicy(mpp);
+ 	select_selector(mpp);
+ 	select_features(mpp);
++	select_retain_hwhandler(mpp);
+ 	select_hwhandler(mpp);
+ 	select_rr_weight(mpp);
+ 	select_minio(mpp);
+@@ -293,7 +294,6 @@ setup_map (struct multipath * mpp, char
+ 	select_fast_io_fail(mpp);
+ 	select_dev_loss(mpp);
+ 	select_reservation_key(mpp);
+-	select_retain_hwhandler(mpp);
+ 	select_deferred_remove(mpp);
+ 	select_delay_watch_checks(mpp);
+ 	select_delay_wait_checks(mpp);
+Index: multipath-tools-130222/libmultipath/propsel.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/propsel.c
++++ multipath-tools-130222/libmultipath/propsel.c
+@@ -19,6 +19,8 @@
+ #include "discovery.h"
+ #include "prioritizers/alua_rtpg.h"
+ #include "prkey.h"
++#include "sysfs.h"
++#include "util.h"
+ #include <inttypes.h>
+ #include <libudev.h>
+ #include <mpath_persist.h>
+@@ -317,9 +319,65 @@ select_features (struct multipath * mp)
+ 	return 0;
+ }
+ 
++static int get_dh_state(struct path *pp, char *value, size_t value_len)
++{
++	int ret;
++	struct udev_device *ud;
++
++	if (pp->udev == NULL)
++		return -1;
++
++	ud = udev_device_get_parent_with_subsystem_devtype(pp->udev, "scsi",
++							   "scsi_device");
++	if (ud == NULL)
++		return -1;
++
++	ret = sysfs_attr_get_value(ud, "dh_state", value, value_len);
++	if (ret > 0)
++		strchop(value);
++	return ret;
++}
++
++static int
++use_attached_hwhandler(struct multipath * mp)
++{
++	int i;
++	struct path *pp;
++	int attached_hwhandler = 0;
++	/* dh_state is no longer than "detached" */
++	char dh_state[10];
++
++	vector_foreach_slot (mp->paths, pp, i) {
++		if (get_dh_state(pp, dh_state, sizeof(dh_state)) > 0 &&
++		    strcmp(dh_state, "detached") != 0) {
++			if (!attached_hwhandler) {
++				if (asprintf(&mp->hwhandler, "1 %s",
++					     dh_state) < 0)
++					return 0;
++				attached_hwhandler = 1;
++			/* if we find 2 different hardware handlers, disable
++			 * retain_attached_hw_handler, and use the configured
++			 * handler */
++			} else if (strcmp(dh_state, &mp->hwhandler[2]) != 0) {
++				FREE(mp->hwhandler);
++				mp->hwhandler = NULL;
++				mp->retain_hwhandler = RETAIN_HWHANDLER_OFF;
++				condlog(0, "%s: retain_attached_hw_hander disabled (inconsistent handlers on paths)", mp->alias);
++				return 0;
++			}
++		}
++	}
++	return attached_hwhandler;
++}
++
+ extern int
+ select_hwhandler (struct multipath * mp)
+ {
++	if (mp->retain_hwhandler == RETAIN_HWHANDLER_ON &&
++	    use_attached_hwhandler(mp)) {
++		condlog(3, "%s: hwhandler = %s (setting: retained by kernel driver)", mp->alias, mp->hwhandler);
++		return 0;
++	}
+ 	if (mp->hwe && mp->hwe->hwhandler) {
+ 		mp->hwhandler = mp->hwe->hwhandler;
+ 		condlog(3, "%s: hwhandler = %s (controller setting)",

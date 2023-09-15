@@ -1,8 +1,7 @@
-%global package_speccommit bd297fa189a70081d838fe184638a802c5d786cf
+%global package_speccommit 38393a828845158d132f1050f7480007f323bc78
 %global usver 0.4.9
-%global xsver 121
+%global xsver 136
 %global xsrel %{xsver}%{?xscount}%{?xshash}
-
 Summary: Tools to manage multipath devices using device-mapper
 Name: device-mapper-multipath
 Version: 0.4.9
@@ -247,10 +246,47 @@ Patch230: 0233-RHBZ-1451852-1482629-nimble-config.patch
 Patch231: 0234-RHBZ-1500109-doc-typo.patch
 Patch232: 0235-RHBZ-1480638-NVMe-support.patch
 Patch233: 0236-RHBZ-1525348-fix-msg.patch
-Patch234: revert-0103.patch
-Patch235: improve_error_handling_in_reconfigure.patch
-Patch236: restrict_should_multipath_success_conditions.patch
-Patch237: backport_21136f36a_Add-HP-MSA-2040-to-the-hardware-table.patch
+Patch234: 0237-RHBZ-1526876-show-sysfs-state.patch
+Patch235: 0238-RHBZ-1508483-mpathconf-info.patch
+Patch236: 0239-RHBZ-1544958-client-timeout.patch
+Patch237: 0240-UPBZ-1568902-id_size.patch
+Patch238: 0241-RHBZ-1554516-show-path-failures.patch
+Patch239: 0242-RHBZ-1541116-all-tg-pt.patch
+Patch240: 0243-RHBZ-1498724-save-persist-options.patch
+Patch241: 0244-RHBZ-1562247-remove-rbd.patch
+Patch242: 0245-RHBZ-1584228-fix-readsector0_size.patch
+Patch243: 0246-RHBZ-1593459-add-transport-blacklist.patch
+Patch244: 0247-RHBZ-1585824-mpathconf-allow-doc.patch
+Patch245: 0248-RHBZ-1594360-fix-param-rk-doc.patch
+Patch246: 0249-RHBZ-1610263-mpathpersist-max-fds.patch
+Patch247: 0250-RHBZ-1610867-rescan-change.patch
+Patch248: 0251-RHBZ-1614011-discovery-timeout.patch
+Patch249: 0252-RHBZ-1623595-cmd-error-status.patch
+Patch250: 0253-RHBZ-1618549-mix-hw-handler.patch
+Patch251: 0254-RHBZ-1635819-fix-mpathpersist-crash.patch
+Patch252: 0255-RHBZ-1638651-marginal-path.patch
+Patch253: 0256-RHBZ-1672175-retry-no-fd-paths.patch
+Patch254: 0257-RHBZ-1679556-dont-check-dm-devices.patch
+Patch255: 0258-RHBZ-1634183-ANA-prioritizer.patch
+Patch256: 0259-RHBZ-1701604-fix-nr-active.patch
+Patch257: 0260-RHBZ-1634183-prio-fixes.patch
+Patch258: 0262-RHBZ-1699486-reload-with-failed-paths.patch
+Patch259: 0263-RHBZ-1686708-nvme-hcil.patch
+Patch260: 0264-RHBZ-1699441-de-series-config.patch
+Patch261: 0265-RHBZ-1721855-mpathpersist-speedup.patch
+Patch262: 0266-RHBZ-1696817-fix-emc-checker.patch
+Patch263: 0267-RHBZ-1661156-powermax-config.patch
+Patch264: 0268-RHBZ-1721855-mpathpersist-fixes.patch
+Patch265: 0269-RHBZ-1804420-remove-kpartx-limit.patch
+Patch266: 0270-RHBZ-1775481-segfault-fix.patch
+Patch267: 0271-RHBZ-1806197-mpathconf-typo.patch
+Patch268: 0272-RHBZ-1855901-lenovo-de.patch
+Patch269: 0273-RHBZ-1988462-fix-disable-changed-wwids-segfault.patch
+Patch270: 0274-UP-no-duplicate-command-keys.patch
+Patch271: revert-0103.patch
+Patch272: improve_error_handling_in_reconfigure.patch
+Patch273: restrict_should_multipath_success_conditions.patch
+Patch274: backport_21136f36a_Add-HP-MSA-2040-to-the-hardware-table.patch
 
 # runtime
 Requires: %{name}-libs = %{version}-%{release}

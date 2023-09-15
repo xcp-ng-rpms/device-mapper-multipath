@@ -1,0 +1,36 @@
+---
+ libmpathpersist/mpath_persist.c |   11 +++++------
+ 1 file changed, 5 insertions(+), 6 deletions(-)
+
+Index: multipath-tools-130222/libmpathpersist/mpath_persist.c
+===================================================================
+--- multipath-tools-130222.orig/libmpathpersist/mpath_persist.c
++++ multipath-tools-130222/libmpathpersist/mpath_persist.c
+@@ -524,10 +524,10 @@ int mpath_prout_reg(struct multipath *mp
+ 		if (!rollback && (thread[i].param.status == MPATH_PR_RESERV_CONFLICT)){
+ 			rollback = 1;
+ 			sa_key = 0;
+-			for (i = 0; i < 8; ++i){
+-				if (i > 0)
++			for (j = 0; j < 8; ++j){
++				if (j > 0)
+ 					sa_key <<= 8;
+-				sa_key |= paramp->sa_key[i];
++				sa_key |= paramp->sa_key[j];
+ 			}
+ 			status = MPATH_PR_RESERV_CONFLICT ;
+ 		}
+@@ -537,11 +537,10 @@ int mpath_prout_reg(struct multipath *mp
+ 	}
+ 	if (rollback && ((rq_servact == MPATH_PROUT_REG_SA) && sa_key != 0 )){
+ 		condlog (3, "%s: ERROR: initiating pr out rollback", mpp->wwid);
++		memcpy(&paramp->key, &paramp->sa_key, 8);
++		memset(&paramp->sa_key, 0, 8);
+ 		for( i=0 ; i < count ; i++){
+ 			if (thread[i].param.status == MPATH_PR_SUCCESS) {
+-				memcpy(&thread[i].param.paramp->key, &thread[i].param.paramp->sa_key, 8);
+-				memset(&thread[i].param.paramp->sa_key, 0, 8);
+-				thread[i].param.status = MPATH_PR_SUCCESS;
+ 				rc = pthread_create(&thread[i].id, &attr, mpath_prout_pthread_fn, 
+ 						(void *)(&thread[i].param));
+ 				if (rc){

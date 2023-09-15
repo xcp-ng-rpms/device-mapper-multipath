@@ -1,0 +1,228 @@
+---
+ libmpathpersist/mpath_persist.c  |    4 +++-
+ libmpathpersist/mpath_pr_ioctl.c |    4 +++-
+ libmpathpersist/mpathpr.h        |    1 -
+ libmultipath/configure.c         |   29 +++++++++++++++++++++++++++++
+ libmultipath/configure.h         |    1 +
+ mpathpersist/main.c              |    8 +++++++-
+ multipath/main.c                 |   13 +------------
+ multipathd/main.c                |   28 +---------------------------
+ 8 files changed, 45 insertions(+), 43 deletions(-)
+
+Index: multipath-tools-130222/libmpathpersist/mpath_persist.c
+===================================================================
+--- multipath-tools-130222.orig/libmpathpersist/mpath_persist.c
++++ multipath-tools-130222/libmpathpersist/mpath_persist.c
+@@ -19,6 +19,7 @@
+ #include <dmparser.h>
+ #include <ctype.h>
+ #include <propsel.h>
++#include <util.h>
+ 
+ #include "mpath_persist.h"
+ #include "mpathpr.h"
+@@ -71,7 +72,8 @@ updatepaths (struct multipath * mpp)
+ 
+ 		vector_foreach_slot (pgp->paths, pp, j){
+ 			if (!strlen(pp->dev)){
+-				if (devt2devname(pp->dev, pp->dev_t)){
++				if (devt2devname(pp->dev, sizeof(pp->dev),
++				    pp->dev_t)){
+ 					/*
+ 					 * path is not in sysfs anymore
+ 					 */
+Index: multipath-tools-130222/libmpathpersist/mpath_pr_ioctl.c
+===================================================================
+--- multipath-tools-130222.orig/libmpathpersist/mpath_pr_ioctl.c
++++ multipath-tools-130222/libmpathpersist/mpath_pr_ioctl.c
+@@ -1,5 +1,6 @@
+ #include <stdio.h>
+ #include <stdlib.h>
++#include <errno.h>
+ 
+ #include <sys/types.h>
+ #include <sys/stat.h>
+@@ -306,7 +307,8 @@ int prin_do_scsi_ioctl(char * dev, int r
+ 	snprintf(devname, FILE_NAME_SIZE, "/dev/%s",dev);
+         fd = open(devname, O_WRONLY);
+         if(fd < 0){
+-        	condlog(0, "%s: Unable to open device ", dev);
++        	condlog(0, "%s: Unable to open device: %s", devname,
++			strerror(errno));
+ 		return MPATH_PR_FILE_ERROR;
+          }
+ 
+Index: multipath-tools-130222/libmpathpersist/mpathpr.h
+===================================================================
+--- multipath-tools-130222.orig/libmpathpersist/mpathpr.h
++++ multipath-tools-130222/libmpathpersist/mpathpr.h
+@@ -54,6 +54,5 @@ int update_prkey_flags(char *mapname, ui
+ #define update_prkey(mapname, prkey) update_prkey_flags(mapname, prkey, 0)
+ void * mpath_alloc_prin_response(int prin_sa);
+ int update_map_pr(struct multipath *mpp);
+-int devt2devname (char *devname, char *devt);
+ 
+ #endif  
+Index: multipath-tools-130222/mpathpersist/main.c
+===================================================================
+--- multipath-tools-130222.orig/mpathpersist/main.c
++++ multipath-tools-130222/mpathpersist/main.c
+@@ -5,6 +5,10 @@
+ #include <fcntl.h>
+ #include <checkers.h>
+ #include <vector.h>
++#include <config.h>
++#include <structs.h>
++#include <structs_vec.h>
++#include <configure.h>
+ #include <util.h>
+ #include <structs.h>
+ #include <getopt.h>
+@@ -264,7 +268,7 @@ int main (int argc, char * argv[])
+ 
+ 	/* set verbosity */
+ 	noisy = (loglevel >= 3) ? 1 : hex;
+-	verbose	= (loglevel >= 3)? 3: loglevel;
++	verbose	= (loglevel >= 4)? 4 : loglevel;
+ 
+ 	if ((prout_flag + prin_flag) == 0)
+ 	{
+@@ -356,6 +360,8 @@ int main (int argc, char * argv[])
+ 		goto out;
+ 	}
+ 
++	set_max_fds(conf->max_fds);
++
+ 	/* open device */
+ 	if ((fd = open (device_name, O_WRONLY)) < 0)
+ 	{
+Index: multipath-tools-130222/libmultipath/configure.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/configure.c
++++ multipath-tools-130222/libmultipath/configure.c
+@@ -15,6 +15,8 @@
+ #include <libdevmapper.h>
+ #include <libudev.h>
+ #include <mpath_cmd.h>
++#include <sys/time.h>
++#include <sys/resource.h>
+ 
+ #include "checkers.h"
+ #include "vector.h"
+@@ -1143,3 +1145,30 @@ extern int reload_map(struct vectors *ve
+ 
+ 	return 0;
+ }
++
++void set_max_fds(int max_fds)
++{
++	struct rlimit fd_limit;
++
++	if (!max_fds)
++		return;
++
++	if (getrlimit(RLIMIT_NOFILE, &fd_limit) < 0) {
++		condlog(0, "can't get open fds limit: %s",
++			strerror(errno));
++		fd_limit.rlim_cur = 0;
++		fd_limit.rlim_max = 0;
++	}
++	 if (fd_limit.rlim_cur < conf->max_fds) {
++		fd_limit.rlim_cur = conf->max_fds;
++		if (fd_limit.rlim_max < conf->max_fds)
++			fd_limit.rlim_max = conf->max_fds;
++		if (setrlimit(RLIMIT_NOFILE, &fd_limit) < 0)
++			condlog(0, "can't set open fds limit to %lu/%lu : %s",
++				fd_limit.rlim_cur, fd_limit.rlim_max,
++				strerror(errno));
++		else
++			condlog(3, "set open fds limit to %lu/%lu",
++				fd_limit.rlim_cur, fd_limit.rlim_max);
++	}
++}
+Index: multipath-tools-130222/libmultipath/configure.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/configure.h
++++ multipath-tools-130222/libmultipath/configure.h
+@@ -33,3 +33,4 @@ int get_refwwid (char * dev, enum devtyp
+ int reload_map(struct vectors *vecs, struct multipath *mpp, int refresh);
+ int sysfs_get_host_adapter_name(struct path *pp, char *adapter_name);
+ void trigger_uevents (struct multipath *mpp);
++void set_max_fds(int max_fds);
+Index: multipath-tools-130222/multipath/main.c
+===================================================================
+--- multipath-tools-130222.orig/multipath/main.c
++++ multipath-tools-130222/multipath/main.c
+@@ -52,8 +52,6 @@
+ #include <pgpolicies.h>
+ #include <version.h>
+ #include <errno.h>
+-#include <sys/time.h>
+-#include <sys/resource.h>
+ #include <wwids.h>
+ #include <file.h>
+ #include "dev_t.h"
+@@ -638,16 +636,7 @@ main (int argc, char *argv[])
+ 		}
+ 	}
+ 	conf->daemon = 0;
+-
+-	if (conf->max_fds) {
+-		struct rlimit fd_limit;
+-
+-		fd_limit.rlim_cur = conf->max_fds;
+-		fd_limit.rlim_max = conf->max_fds;
+-		if (setrlimit(RLIMIT_NOFILE, &fd_limit) < 0)
+-			condlog(0, "can't set open fds limit to %d : %s",
+-				conf->max_fds, strerror(errno));
+-	}
++	set_max_fds(conf->max_fds);
+ 
+ 	if (init_checkers()) {
+ 		condlog(0, "failed to initialize checkers");
+Index: multipath-tools-130222/multipathd/main.c
+===================================================================
+--- multipath-tools-130222.orig/multipathd/main.c
++++ multipath-tools-130222/multipathd/main.c
+@@ -12,8 +12,6 @@
+ #include <sys/types.h>
+ #include <fcntl.h>
+ #include <errno.h>
+-#include <sys/time.h>
+-#include <sys/resource.h>
+ #include <limits.h>
+ #include <linux/oom.h>
+ #include <libudev.h>
+@@ -1946,31 +1944,7 @@ child (void * param)
+ 
+ 	setlogmask(LOG_UPTO(conf->verbosity + 3));
+ 
+-	if (conf->max_fds) {
+-		struct rlimit fd_limit;
+-
+-		if (getrlimit(RLIMIT_NOFILE, &fd_limit) < 0) {
+-			condlog(0, "can't get open fds limit: %s",
+-				strerror(errno));
+-			fd_limit.rlim_cur = 0;
+-			fd_limit.rlim_max = 0;
+-		}
+-		if (fd_limit.rlim_cur < conf->max_fds) {
+-			fd_limit.rlim_cur = conf->max_fds;
+-			if (fd_limit.rlim_max < conf->max_fds)
+-				fd_limit.rlim_max = conf->max_fds;
+-			if (setrlimit(RLIMIT_NOFILE, &fd_limit) < 0) {
+-				condlog(0, "can't set open fds limit to "
+-					"%lu/%lu : %s",
+-					fd_limit.rlim_cur, fd_limit.rlim_max,
+-					strerror(errno));
+-			} else {
+-				condlog(3, "set open fds limit to %lu/%lu",
+-					fd_limit.rlim_cur, fd_limit.rlim_max);
+-			}
+-		}
+-
+-	}
++	set_max_fds(conf->max_fds);
+ 
+ 	vecs = gvecs = init_vecs();
+ 	if (!vecs) {
