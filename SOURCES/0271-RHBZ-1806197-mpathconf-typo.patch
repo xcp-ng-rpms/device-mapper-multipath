@@ -1,0 +1,26 @@
+---
+ multipath/multipath.conf.5 |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+Index: multipath-tools-130222/multipath/multipath.conf.5
+===================================================================
+--- multipath-tools-130222.orig/multipath/multipath.conf.5
++++ multipath-tools-130222/multipath/multipath.conf.5
+@@ -213,7 +213,7 @@ Default value is \fBconst\fR.
+ .RE
+ .TP
+ .B prio_args
+-Arguments to pass to to the prio function. This only applies to certain
++Arguments to pass to the prio function. This only applies to certain
+ prioritizers
+ .RS
+ .TP 12
+@@ -228,7 +228,7 @@ regex can be of device name format  Ex:
+ regex can be of the form
+ .I "host_wwnn:host_wwpn:target_wwnn:target_wwpn"
+ these values can be looked up through sysfs or by running
+-.I mulitpathd show paths format "%N:%R:%n:%r"
++.I multipathd show paths format "%N:%R:%n:%r"
+ Ex: 0x200100e08ba0aea0:0x210100e08ba0aea0:.*:.* , .*:.*:iqn.2009-10.com.redhat.msp.lab.ask-06:.*
+ .TP
+ .B alua

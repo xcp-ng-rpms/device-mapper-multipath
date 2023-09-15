@@ -1,0 +1,136 @@
+---
+ libmpathpersist/mpath_persist.c |    2 +-
+ mpathpersist/main.c             |   36 ++++++++++++++++++++++--------------
+ 2 files changed, 23 insertions(+), 15 deletions(-)
+
+Index: multipath-tools-130222/mpathpersist/main.c
+===================================================================
+--- multipath-tools-130222.orig/mpathpersist/main.c
++++ multipath-tools-130222/mpathpersist/main.c
+@@ -141,7 +141,8 @@ static int do_batch_file(const char *bat
+ 
+ static int handle_args(int argc, char * argv[], int nline)
+ {
+-	int fd, c;
++	int c;
++	int fd = -1;
+ 	const char *device_name = NULL;
+ 	int num_prin_sa = 0;
+ 	int num_prout_sa = 0;
+@@ -199,7 +200,8 @@ static int handle_args(int argc, char *
+ 				if (nline == 0 && 1 != sscanf (optarg, "%d", &loglevel))
+ 				{
+ 					fprintf (stderr, "bad argument to '--verbose'\n");
+-					return MPATH_PR_SYNTAX_ERROR;
++					ret = MPATH_PR_SYNTAX_ERROR;
++					goto out;
+ 				}
+ 				break;
+ 
+@@ -214,6 +216,7 @@ static int handle_args(int argc, char *
+ 
+ 			case 'h':
+ 				usage ();
++				free(batch_fn);
+ 				return 0;
+ 
+ 			case 'H':
+@@ -236,7 +239,8 @@ static int handle_args(int argc, char *
+ 				if (parse_prkey(optarg, &param_rk) != 0)
+ 				{
+ 					fprintf (stderr, "bad argument to '--param-rk'\n");
+-					return MPATH_PR_SYNTAX_ERROR;
++					ret = MPATH_PR_SYNTAX_ERROR;
++					goto out;
+ 				}
+ 				++num_prout_param;
+ 				break;
+@@ -245,7 +249,8 @@ static int handle_args(int argc, char *
+ 				if (parse_prkey(optarg, &param_sark) != 0)
+ 				{
+ 					fprintf (stderr, "bad argument to '--param-sark'\n");
+-					return MPATH_PR_SYNTAX_ERROR;
++					ret = MPATH_PR_SYNTAX_ERROR;
++					goto out;
+ 				}
+ 				++num_prout_param;
+ 				break;
+@@ -264,7 +269,8 @@ static int handle_args(int argc, char *
+ 				if (1 != sscanf (optarg, "%x", &prout_type))
+ 				{
+ 					fprintf (stderr, "bad argument to '--prout-type'\n");
+-					return MPATH_PR_SYNTAX_ERROR;
++					ret = MPATH_PR_SYNTAX_ERROR;
++					goto out;
+ 				}
+ 				++num_prout_param;
+ 				break;
+@@ -312,7 +318,8 @@ static int handle_args(int argc, char *
+ 			case 'X':
+ 				if (0 != construct_transportid(optarg, transportids, num_transport)) {
+ 					fprintf(stderr, "bad argument to '--transport-id'\n");
+-					return MPATH_PR_SYNTAX_ERROR;
++					ret = MPATH_PR_SYNTAX_ERROR;
++					goto out;
+ 				}
+ 
+ 				++num_transport;
+@@ -320,12 +327,13 @@ static int handle_args(int argc, char *
+ 
+ 			case 'l':
+                                 if (1 != sscanf(optarg, "%u", &mpath_mx_alloc_len)) {
+-                                        fprintf(stderr, "bad argument to '--alloc-length'\n");
+-                                        return MPATH_PR_SYNTAX_ERROR;
++					fprintf(stderr, "bad argument to '--alloc-length'\n");
++					ret = MPATH_PR_SYNTAX_ERROR;
++					goto out;
+                                 } else if (MPATH_MAX_PARAM_LEN < mpath_mx_alloc_len) {
+-                                        fprintf(stderr, "'--alloc-length' argument exceeds maximum"
+-                                                        " limit(%d)\n", MPATH_MAX_PARAM_LEN);
+-                                        return MPATH_PR_SYNTAX_ERROR;
++					fprintf(stderr, "'--alloc-length' argument exceeds maximum limit(%d)\n", MPATH_MAX_PARAM_LEN);
++					ret = MPATH_PR_SYNTAX_ERROR;
++					goto out;
+                                 }
+                                 break;
+ 
+@@ -465,14 +473,14 @@ static int handle_args(int argc, char *
+ 		{
+ 			fprintf (stderr, "failed to allocate PRIN response buffer\n");
+ 			ret = MPATH_PR_OTHER;
+-			goto out;
++			goto out_fd;
+ 		}
+ 
+ 		ret = __mpath_persistent_reserve_in (fd, prin_sa, resp, noisy);
+ 		if (ret != MPATH_PR_SUCCESS )
+ 		{
+ 			fprintf (stderr, "Persistent Reserve IN command failed\n");
+-			goto out;	
++			goto out_fd;	
+ 		}
+ 
+ 		switch(prin_sa)
+@@ -552,8 +560,8 @@ static int handle_args(int argc, char *
+ 		printf("PR out: command failed\n");
+ 	}
+ 
++out_fd:
+ 	close (fd);
+-
+ out :
+ 	if (ret == MPATH_PR_SYNTAX_ERROR) {
+ 		free(batch_fn);
+Index: multipath-tools-130222/libmpathpersist/mpath_persist.c
+===================================================================
+--- multipath-tools-130222.orig/libmpathpersist/mpath_persist.c
++++ multipath-tools-130222/libmpathpersist/mpath_persist.c
+@@ -585,7 +585,7 @@ int mpath_prout_common(struct multipath
+ 			return ret ;
+ 		}
+ 	}
+-	return MPATH_PR_SUCCESS;
++	return MPATH_PR_DMMP_ERROR;
+ }
+ 
+ int send_prout_activepath(char * dev, int rq_servact, int rq_scope,

@@ -1,0 +1,268 @@
+---
+ libmultipath/structs_vec.c |  103 +++++++++------------------------------------
+ libmultipath/structs_vec.h |    6 ++
+ multipathd/main.c          |   50 +++++++++++++++++++++
+ 3 files changed, 75 insertions(+), 84 deletions(-)
+
+Index: multipath-tools-130222/libmultipath/structs_vec.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/structs_vec.c
++++ multipath-tools-130222/libmultipath/structs_vec.c
+@@ -103,7 +103,7 @@ orphan_paths (vector pathvec, struct mul
+ 	}
+ }
+ 
+-static void
++void
+ set_multipath_wwid (struct multipath * mpp)
+ {
+ 	if (strlen(mpp->wwid))
+@@ -188,57 +188,36 @@ remove_maps_and_stop_waiters (struct vec
+ 	_remove_maps(vecs, STOP_WAITER);
+ }
+ 
+-static struct hwentry *
++void
+ extract_hwe_from_path(struct multipath * mpp)
+ {
+ 	struct path * pp = NULL;
+-	int pg_num = -1, p_num = -1, i;
+-	struct pathgroup * pgp = NULL;
+-
+-	condlog(3, "%s: searching paths for valid hwe", mpp->alias);
++	int i;
+ 
+-	if (mpp && mpp->pg) {
+-		vector_foreach_slot(mpp->pg, pgp, i) {
+-			if (pgp->status == PGSTATE_ACTIVE ||
+-			    pgp->status == PGSTATE_ENABLED) {
+-				pg_num = i;
+-				break;
+-			}
+-		}
+-		if (pg_num >= 0)
+-			pgp = VECTOR_SLOT(mpp->pg, pg_num);
+-	}
++	if (mpp->hwe || !mpp->paths)
++		return;
+ 
+-	if (pgp && pgp->paths) {
+-		vector_foreach_slot(pgp->paths, pp, i) {
+-			if (pp->dmstate == PSTATE_FAILED)
+-				continue;
+-			if (strlen(pp->vendor_id) > 0 &&
+-			    strlen(pp->product_id) > 0 &&
+-			    strlen(pp->rev) > 0) {
+-				p_num = i;
+-				break;
+-			}
++	condlog(3, "%s: searching paths for valid hwe", mpp->alias);
++	/* doing this in two passes seems like paranoia to me */
++	vector_foreach_slot(mpp->paths, pp, i) {
++		if (pp->state != PATH_UP)
++			continue;
++		if (pp->hwe) {
++			mpp->hwe = pp->hwe;
++			return;
+ 		}
+-		if (p_num >= 0)
+-			pp = VECTOR_SLOT(pgp->paths, i);
+ 	}
+-
+-	if (pp) {
+-		condlog(3, "%s: vendor = %s", pp->dev, pp->vendor_id);
+-		condlog(3, "%s: product = %s", pp->dev, pp->product_id);
+-		condlog(3, "%s: rev = %s", pp->dev, pp->rev);
+-		if (!pp->hwe) {
+-			condlog(3, "searching hwtable");
+-			pp->hwe = find_hwe(conf->hwtable, pp->vendor_id,
+-					   pp->product_id, pp->rev);
++	vector_foreach_slot(mpp->paths, pp, i) {
++		if (pp->state == PATH_UP)
++			continue;
++		if (pp->hwe) {
++			mpp->hwe = pp->hwe;
++			return;
+ 		}
+ 	}
+-
+-	return pp?pp->hwe:NULL;
+ }
+ 
+-static int
++int
+ update_multipath_table (struct multipath *mpp, vector pathvec)
+ {
+ 	char params[PARAMS_SIZE] = {0};
+@@ -259,7 +238,7 @@ update_multipath_table (struct multipath
+ 	return 0;
+ }
+ 
+-static int
++int
+ update_multipath_status (struct multipath *mpp)
+ {
+ 	char status[PARAMS_SIZE] = {0};
+@@ -371,21 +350,11 @@ __setup_multipath (struct vectors * vecs
+ 		goto out;
+ 	}
+ 
+-	set_multipath_wwid(mpp);
+-	mpp->mpe = find_mpe(mpp->wwid);
+-	condlog(3, "%s: discover", mpp->alias);
+-
+ 	if (update_multipath_strings(mpp, vecs->pathvec)) {
+ 		condlog(0, "%s: failed to setup multipath", mpp->alias);
+ 		goto out;
+ 	}
+ 
+-	if (!mpp->hwe)
+-		mpp->hwe = extract_hwe_from_path(mpp);
+-	if (!mpp->hwe) {
+-		condlog(3, "%s: no hardware entry found, using defaults",
+-			mpp->alias);
+-	}
+ 	if (reset) {
+ 		select_rr_weight(mpp);
+ 		select_pgfailback(mpp);
+@@ -402,36 +371,6 @@ out:
+ 	return 1;
+ }
+ 
+-extern struct multipath *
+-add_map_without_path (struct vectors * vecs, char * alias)
+-{
+-	struct multipath * mpp = alloc_multipath();
+-
+-	if (!mpp || !alias)
+-		return NULL;
+-
+-	mpp->alias = STRDUP(alias);
+-
+-	if (setup_multipath(vecs, mpp))
+-		return NULL; /* mpp freed in setup_multipath */
+-
+-	if (adopt_paths(vecs->pathvec, mpp, 1))
+-		goto out;
+-
+-	if (!vector_alloc_slot(vecs->mpvec))
+-		goto out;
+-
+-	vector_set_slot(vecs->mpvec, mpp);
+-
+-	if (start_waiter_thread(mpp, vecs))
+-		goto out;
+-
+-	return mpp;
+-out:
+-	remove_map(mpp, vecs, PURGE_VEC);
+-	return NULL;
+-}
+-
+ static void
+ find_existing_alias (struct multipath * mpp,
+ 		     struct vectors *vecs)
+Index: multipath-tools-130222/libmultipath/structs_vec.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/structs_vec.h
++++ multipath-tools-130222/libmultipath/structs_vec.h
+@@ -31,11 +31,15 @@ void remove_map_and_stop_waiter (struct
+ void remove_maps (struct vectors * vecs);
+ void remove_maps_and_stop_waiters (struct vectors * vecs);
+ 
+-struct multipath * add_map_without_path (struct vectors * vecs, char * alias);
+ struct multipath * add_map_with_path (struct vectors * vecs,
+ 				struct path * pp, int add_vec);
+ int update_multipath (struct vectors *vecs, char *mapname, int reset);
+ void update_queue_mode_del_path(struct multipath *mpp);
+ void update_queue_mode_add_path(struct multipath *mpp);
+ 
++void extract_hwe_from_path(struct multipath * mpp);
++void set_multipath_wwid (struct multipath * mpp);
++int update_multipath_table (struct multipath *mpp, vector pathvec);
++int update_multipath_status (struct multipath *mpp);
++
+ #endif /* _STRUCTS_VEC_H */
+Index: multipath-tools-130222/multipathd/main.c
+===================================================================
+--- multipath-tools-130222.orig/multipathd/main.c
++++ multipath-tools-130222/multipathd/main.c
+@@ -273,6 +273,7 @@ retry:
+ 	mpp->flush_on_last_del = FLUSH_UNDEF;
+ 	mpp->action = ACT_RELOAD;
+ 
++	extract_hwe_from_path(mpp);
+ 	if (setup_map(mpp, params, PARAMS_SIZE)) {
+ 		condlog(0, "%s: failed to setup new map in update", mpp->alias);
+ 		retries = -1;
+@@ -296,6 +297,49 @@ fail:
+ 	return 0;
+ }
+ 
++static struct multipath *
++add_map_without_path (struct vectors * vecs, char * alias)
++{
++	struct multipath * mpp = alloc_multipath();
++
++	if (!mpp)
++		return NULL;
++	if (!alias) {
++		FREE(mpp);
++		return NULL;
++	}
++
++	mpp->alias = STRDUP(alias);
++
++	if (dm_get_info(mpp->alias, &mpp->dmi)) {
++		condlog(3, "%s: cannot access table", mpp->alias);
++		goto out;
++	}
++	set_multipath_wwid(mpp);
++	mpp->mpe = find_mpe(mpp->wwid);
++
++	if (update_multipath_table(mpp, vecs->pathvec))
++		 goto out;
++	if (update_multipath_status(mpp))
++		goto out;
++
++	if (!vector_alloc_slot(vecs->mpvec))
++		goto out;
++
++	vector_set_slot(vecs->mpvec, mpp);
++
++	if (update_map(mpp, vecs) != 0) /* map removed */
++		return NULL;
++
++	if (start_waiter_thread(mpp, vecs))
++		goto out;
++
++	return mpp;
++out:
++	remove_map(mpp, vecs, 1);
++	return NULL;
++}
++
+ static int
+ uev_add_map (struct uevent * uev, struct vectors * vecs)
+ {
+@@ -569,6 +613,7 @@ rescan:
+ 		verify_paths(mpp, vecs, NULL);
+ 		mpp->flush_on_last_del = FLUSH_UNDEF;
+ 		mpp->action = ACT_RELOAD;
++		extract_hwe_from_path(mpp);
+ 	} else {
+ 		if (!should_multipath(pp, vecs->pathvec)) {
+ 			orphan_path(pp);
+@@ -855,8 +900,11 @@ map_discovery (struct vectors * vecs)
+ 		return 1;
+ 
+ 	vector_foreach_slot (vecs->mpvec, mpp, i)
+-		if (setup_multipath(vecs, mpp))
++		if (update_multipath_table(mpp, vecs->pathvec) ||
++		    update_multipath_status(mpp)) {
++			remove_map(mpp, vecs, 1);
+ 			i--;
++		}
+ 
+ 	return 0;
+ }

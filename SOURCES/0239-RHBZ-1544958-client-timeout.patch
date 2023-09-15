@@ -1,0 +1,17 @@
+---
+ libmpathcmd/mpath_cmd.h |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+Index: multipath-tools-130222/libmpathcmd/mpath_cmd.h
+===================================================================
+--- multipath-tools-130222.orig/libmpathcmd/mpath_cmd.h
++++ multipath-tools-130222/libmpathcmd/mpath_cmd.h
+@@ -27,7 +27,7 @@ extern "C" {
+ #endif
+ 
+ #define DEFAULT_SOCKET		"/org/kernel/linux/storage/multipathd"
+-#define DEFAULT_REPLY_TIMEOUT	10000
++#define DEFAULT_REPLY_TIMEOUT	60000
+ 
+ 
+ /*

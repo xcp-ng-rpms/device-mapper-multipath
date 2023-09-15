@@ -1,0 +1,2028 @@
+---
+ libmultipath/Makefile      |    7 
+ libmultipath/config.h      |   12 
+ libmultipath/configure.c   |   18 -
+ libmultipath/configure.h   |    3 
+ libmultipath/defaults.h    |    1 
+ libmultipath/dict.c        |  410 ++++++++++++++++++++++++
+ libmultipath/io_err_stat.c |  763 +++++++++++++++++++++++++++++++++++++++++++++
+ libmultipath/io_err_stat.h |   15 
+ libmultipath/propsel.c     |   98 +++++
+ libmultipath/propsel.h     |    4 
+ libmultipath/structs.h     |   14 
+ libmultipath/time-util.c   |   42 ++
+ libmultipath/time-util.h   |   13 
+ libmultipath/uevent.c      |   38 ++
+ libmultipath/uevent.h      |    2 
+ multipath/multipath.conf.5 |  108 ++++++
+ multipathd/cli_handlers.c  |    2 
+ multipathd/main.c          |   64 +++
+ 18 files changed, 1599 insertions(+), 15 deletions(-)
+
+Index: multipath-tools-130222/libmultipath/Makefile
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/Makefile
++++ multipath-tools-130222/libmultipath/Makefile
+@@ -7,16 +7,17 @@ include ../Makefile.inc
+ SONAME=0
+ DEVLIB = libmultipath.so
+ LIBS = $(DEVLIB).$(SONAME)
+-LIBDEPS = -lpthread -ldl -ldevmapper -ludev -L$(mpathcmddir) -lmpathcmd
++LIBDEPS = -lpthread -ldl -ldevmapper -ludev -L$(mpathcmddir) -lmpathcmd -laio
+ CFLAGS += -fPIC -I$(mpathcmddir) -I$(mpathpersistdir)
+ 
+ OBJS = memory.o parser.o vector.o devmapper.o \
+        hwtable.o blacklist.o util.o dmparser.o config.o \
+        structs.o discovery.o propsel.o dict.o \
+-       pgpolicies.o debug.o regex.o defaults.o uevent.o \
++       pgpolicies.o debug.o regex.o defaults.o uevent.o time-util.o \
+        switchgroup.o uxsock.o print.o alias.o log_pthread.o \
+        log.o configure.o structs_vec.o sysfs.o prio.o checkers.o \
+-       lock.o waiter.o file.o wwids.o prioritizers/alua_rtpg.o prkey.o
++       lock.o waiter.o file.o wwids.o prioritizers/alua_rtpg.o prkey.o \
++       io_err_stat.o
+ 
+ LIBDM_API_FLUSH = $(shell grep -Ecs '^[a-z]*[[:space:]]+dm_task_no_flush' /usr/include/libdevmapper.h)
+ 
+Index: multipath-tools-130222/libmultipath/config.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/config.h
++++ multipath-tools-130222/libmultipath/config.h
+@@ -67,6 +67,10 @@ struct hwentry {
+ 	int deferred_remove;
+ 	int delay_watch_checks;
+ 	int delay_wait_checks;
++	int marginal_path_err_sample_time;
++	int marginal_path_err_rate_threshold;
++	int marginal_path_err_recheck_gap_time;
++	int marginal_path_double_failed_time;
+ 	int skip_kpartx;
+ 	int max_sectors_kb;
+ 	int unpriv_sgio;
+@@ -100,6 +104,10 @@ struct mpentry {
+ 	int deferred_remove;
+ 	int delay_watch_checks;
+ 	int delay_wait_checks;
++	int marginal_path_err_sample_time;
++	int marginal_path_err_rate_threshold;
++	int marginal_path_err_recheck_gap_time;
++	int marginal_path_double_failed_time;
+ 	int skip_kpartx;
+ 	int max_sectors_kb;
+ 	int unpriv_sgio;
+@@ -153,6 +161,10 @@ struct config {
+ 	int processed_main_config;
+ 	int delay_watch_checks;
+ 	int delay_wait_checks;
++	int marginal_path_err_sample_time;
++	int marginal_path_err_rate_threshold;
++	int marginal_path_err_recheck_gap_time;
++	int marginal_path_double_failed_time;
+ 	int retrigger_tries;
+ 	int retrigger_delay;
+ 	int new_bindings_in_boot;
+Index: multipath-tools-130222/libmultipath/configure.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/configure.c
++++ multipath-tools-130222/libmultipath/configure.c
+@@ -42,6 +42,7 @@
+ #include "uxsock.h"
+ #include "wwids.h"
+ #include "sysfs.h"
++#include "io_err_stat.h"
+ 
+ /* group paths in pg by host adapter
+  */
+@@ -257,7 +258,8 @@ int rr_optimize_path_order(struct pathgr
+ }
+ 
+ extern int
+-setup_map (struct multipath * mpp, char * params, int params_size)
++setup_map (struct multipath * mpp, char * params, int params_size,
++	   struct vectors *vecs)
+ {
+ 	struct pathgroup * pgp;
+ 	int i, old_nr_active;
+@@ -297,11 +299,21 @@ setup_map (struct multipath * mpp, char
+ 	select_deferred_remove(mpp);
+ 	select_delay_watch_checks(mpp);
+ 	select_delay_wait_checks(mpp);
++	select_marginal_path_err_sample_time(mpp);
++	select_marginal_path_err_rate_threshold(mpp);
++	select_marginal_path_err_recheck_gap_time(mpp);
++	select_marginal_path_double_failed_time(mpp);
+ 	select_skip_kpartx(mpp);
+ 	select_max_sectors_kb(mpp);
+ 	select_unpriv_sgio(mpp);
+ 
+ 	sysfs_set_scsi_tmo(mpp);
++
++	if (mpp->marginal_path_double_failed_time > 0 &&
++	    mpp->marginal_path_err_sample_time > 0 &&
++	    mpp->marginal_path_err_recheck_gap_time > 0 &&
++	    mpp->marginal_path_err_rate_threshold >= 0)
++		start_io_err_stat_thread(vecs);
+ 	/*
+ 	 * assign paths to path groups -- start with no groups and all paths
+ 	 * in mpp->paths
+@@ -867,7 +879,7 @@ coalesce_paths (struct vectors * vecs, v
+ 		verify_paths(mpp, vecs, NULL);
+ 
+ 		params[0] = '\0';
+-		if (setup_map(mpp, params, PARAMS_SIZE)) {
++		if (setup_map(mpp, params, PARAMS_SIZE, vecs)) {
+ 			remove_map(mpp, vecs, 0);
+ 			continue;
+ 		}
+@@ -1118,7 +1130,7 @@ extern int reload_map(struct vectors *ve
+ 		vector_foreach_slot (mpp->paths, pp, i)
+ 			pathinfo(pp, conf->hwtable, DI_PRIO);
+ 	}
+-	if (setup_map(mpp, params, PARAMS_SIZE)) {
++	if (setup_map(mpp, params, PARAMS_SIZE, vecs)) {
+ 		condlog(0, "%s: failed to setup map", mpp->alias);
+ 		return 1;
+ 	}
+Index: multipath-tools-130222/libmultipath/configure.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/configure.h
++++ multipath-tools-130222/libmultipath/configure.h
+@@ -24,7 +24,8 @@ enum actions {
+ #define FLUSH_ONE 1
+ #define FLUSH_ALL 2
+ 
+-int setup_map (struct multipath * mpp, char * params, int params_size );
++int setup_map (struct multipath * mpp, char * params, int params_size,
++	       struct vectors *vecs);
+ int domap (struct multipath * mpp, char * params);
+ int reinstate_paths (struct multipath *mpp);
+ int check_daemon(void);
+Index: multipath-tools-130222/libmultipath/defaults.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/defaults.h
++++ multipath-tools-130222/libmultipath/defaults.h
+@@ -22,6 +22,7 @@
+ #define DEFAULT_DETECT_CHECKER DETECT_CHECKER_OFF
+ #define DEFAULT_DEFERRED_REMOVE DEFERRED_REMOVE_OFF
+ #define DEFAULT_DELAY_CHECKS DELAY_CHECKS_OFF
++#define DEFAULT_MARGINAL_PATH MARGINAL_PATH_OFF
+ #define DEFAULT_RETRIGGER_DELAY 10
+ #define DEFAULT_RETRIGGER_TRIES 3
+ #define DEFAULT_UEV_WAIT_TIMEOUT 30
+Index: multipath-tools-130222/libmultipath/dict.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/dict.c
++++ multipath-tools-130222/libmultipath/dict.c
+@@ -1077,6 +1077,81 @@ def_all_tg_pt_handler(vector strvec)
+         return 0;
+ }
+ 
++static int
++def_marginal_path_err_sample_time_handler(vector strvec)
++{
++	char * buff;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		conf->marginal_path_err_sample_time = MARGINAL_PATH_OFF;
++	else if ((conf->marginal_path_err_sample_time = atoi(buff)) < 1)
++		conf->marginal_path_err_sample_time = MARGINAL_PATH_OFF;
++
++	FREE(buff);
++	return 0;
++}
++
++static int
++def_marginal_path_err_rate_threshold_handler(vector strvec)
++{
++	char * buff;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		conf->marginal_path_err_rate_threshold = MARGINAL_PATH_OFF;
++	else if ((conf->marginal_path_err_rate_threshold = atoi(buff)) < 1)
++		conf->marginal_path_err_rate_threshold = MARGINAL_PATH_OFF;
++
++	FREE(buff);
++	return 0;
++}
++
++static int
++def_marginal_path_err_recheck_gap_time_handler(vector strvec)
++{
++	char * buff;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		conf->marginal_path_err_recheck_gap_time = MARGINAL_PATH_OFF;
++	else if ((conf->marginal_path_err_recheck_gap_time = atoi(buff)) < 1)
++		conf->marginal_path_err_recheck_gap_time = MARGINAL_PATH_OFF;
++
++	FREE(buff);
++	return 0;
++}
++
++static int
++def_marginal_path_double_failed_time_handler(vector strvec)
++{
++	char * buff;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		conf->marginal_path_double_failed_time = MARGINAL_PATH_OFF;
++	else if ((conf->marginal_path_double_failed_time = atoi(buff)) < 1)
++		conf->marginal_path_double_failed_time = MARGINAL_PATH_OFF;
++
++	FREE(buff);
++	return 0;
++}
+ 
+ /*
+  * blacklist block handlers
+@@ -2055,6 +2130,98 @@ hw_all_tg_pt_handler(vector strvec)
+ 	return 0;
+ }
+ 
++static int
++hw_marginal_path_err_sample_time_handler(vector strvec)
++{
++	struct hwentry *hwe = VECTOR_LAST_SLOT(conf->hwtable);
++	char * buff;
++
++	if (!hwe)
++		return 1;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		hwe->marginal_path_err_sample_time = MARGINAL_PATH_OFF;
++	else if ((hwe->marginal_path_err_sample_time = atoi(buff)) < 1)
++		hwe->marginal_path_err_sample_time = MARGINAL_PATH_OFF;
++
++	FREE(buff);
++	return 0;
++}
++
++static int
++hw_marginal_path_err_rate_threshold_handler(vector strvec)
++{
++	struct hwentry *hwe = VECTOR_LAST_SLOT(conf->hwtable);
++	char * buff;
++
++	if (!hwe)
++		return 1;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		hwe->marginal_path_err_rate_threshold = MARGINAL_PATH_OFF;
++	else if ((hwe->marginal_path_err_rate_threshold = atoi(buff)) < 1)
++		hwe->marginal_path_err_rate_threshold = MARGINAL_PATH_OFF;
++
++	FREE(buff);
++	return 0;
++}
++
++static int
++hw_marginal_path_err_recheck_gap_time_handler(vector strvec)
++{
++	struct hwentry *hwe = VECTOR_LAST_SLOT(conf->hwtable);
++	char * buff;
++
++	if (!hwe)
++		return 1;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		hwe->marginal_path_err_recheck_gap_time = MARGINAL_PATH_OFF;
++	else if ((hwe->marginal_path_err_recheck_gap_time = atoi(buff)) < 1)
++		hwe->marginal_path_err_recheck_gap_time = MARGINAL_PATH_OFF;
++
++	FREE(buff);
++	return 0;
++}
++
++static int
++hw_marginal_path_double_failed_time_handler(vector strvec)
++{
++	struct hwentry *hwe = VECTOR_LAST_SLOT(conf->hwtable);
++	char * buff;
++
++	if (!hwe)
++		return 1;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		hwe->marginal_path_double_failed_time = MARGINAL_PATH_OFF;
++	else if ((hwe->marginal_path_double_failed_time = atoi(buff)) < 1)
++		hwe->marginal_path_double_failed_time = MARGINAL_PATH_OFF;
++
++	FREE(buff);
++	return 0;
++}
++
+ /*
+  * multipaths block handlers
+  */
+@@ -2659,6 +2826,98 @@ mp_ghost_delay_handler(vector strvec)
+ 	return 0;
+ }
+ 
++static int
++mp_marginal_path_err_sample_time_handler(vector strvec)
++{
++	struct mpentry *mpe = VECTOR_LAST_SLOT(conf->mptable);
++	char * buff;
++
++	if (!mpe)
++		return 1;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		mpe->marginal_path_err_sample_time = MARGINAL_PATH_OFF;
++	else if ((mpe->marginal_path_err_sample_time = atoi(buff)) < 1)
++		mpe->marginal_path_err_sample_time = MARGINAL_PATH_OFF;
++
++	FREE(buff);
++	return 0;
++}
++
++static int
++mp_marginal_path_err_rate_threshold_handler(vector strvec)
++{
++	struct mpentry *mpe = VECTOR_LAST_SLOT(conf->mptable);
++	char * buff;
++
++	if (!mpe)
++		return 1;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		mpe->marginal_path_err_rate_threshold = MARGINAL_PATH_OFF;
++	else if ((mpe->marginal_path_err_rate_threshold = atoi(buff)) < 1)
++		mpe->marginal_path_err_rate_threshold = MARGINAL_PATH_OFF;
++
++	FREE(buff);
++	return 0;
++}
++
++static int
++mp_marginal_path_err_recheck_gap_time_handler(vector strvec)
++{
++	struct mpentry *mpe = VECTOR_LAST_SLOT(conf->mptable);
++	char * buff;
++
++	if (!mpe)
++		return 1;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		mpe->marginal_path_err_recheck_gap_time = MARGINAL_PATH_OFF;
++	else if ((mpe->marginal_path_err_recheck_gap_time = atoi(buff)) < 1)
++		mpe->marginal_path_err_recheck_gap_time = MARGINAL_PATH_OFF;
++
++	FREE(buff);
++	return 0;
++}
++
++static int
++mp_marginal_path_double_failed_time_handler(vector strvec)
++{
++	struct mpentry *mpe = VECTOR_LAST_SLOT(conf->mptable);
++	char * buff;
++
++	if (!mpe)
++		return 1;
++
++	buff = set_value(strvec);
++	if (!buff)
++		return 1;
++
++	if ((strlen(buff) == 2 && !strcmp(buff, "no")) ||
++	    (strlen(buff) == 1 && !strcmp(buff, "0")))
++		mpe->marginal_path_double_failed_time = MARGINAL_PATH_OFF;
++	else if ((mpe->marginal_path_double_failed_time = atoi(buff)) < 1)
++		mpe->marginal_path_double_failed_time = MARGINAL_PATH_OFF;
++
++	FREE(buff);
++	return 0;
++}
++
+ /*
+  * config file keywords printing
+  */
+@@ -2989,6 +3248,56 @@ snprint_mp_ghost_delay (char * buff, int
+ }
+ 
+ static int
++snprint_mp_marginal_path_err_sample_time (char * buff, int len, void * data)
++{
++	struct mpentry * mpe = (struct mpentry *)data;
++
++	if (mpe->marginal_path_err_sample_time == MARGINAL_PATH_UNDEF)
++		return 0;
++	if (mpe->marginal_path_err_sample_time == MARGINAL_PATH_OFF)
++		return snprintf(buff, len, "no");
++	return snprintf(buff, len, "%d", mpe->marginal_path_err_sample_time);
++}
++
++static int
++snprint_mp_marginal_path_err_rate_threshold (char * buff, int len, void * data)
++{
++	struct mpentry * mpe = (struct mpentry *)data;
++
++	if (mpe->marginal_path_err_rate_threshold == MARGINAL_PATH_UNDEF)
++		return 0;
++	if (mpe->marginal_path_err_rate_threshold == MARGINAL_PATH_OFF)
++		return snprintf(buff, len, "no");
++	return snprintf(buff, len, "%d", mpe->marginal_path_err_rate_threshold);
++}
++
++static int
++snprint_mp_marginal_path_err_recheck_gap_time (char * buff, int len,
++					       void * data)
++{
++	struct mpentry * mpe = (struct mpentry *)data;
++
++	if (mpe->marginal_path_err_recheck_gap_time == MARGINAL_PATH_UNDEF)
++		return 0;
++	if (mpe->marginal_path_err_recheck_gap_time == MARGINAL_PATH_OFF)
++		return snprintf(buff, len, "no");
++	return snprintf(buff, len, "%d",
++			mpe->marginal_path_err_recheck_gap_time);
++}
++
++static int
++snprint_mp_marginal_path_double_failed_time (char * buff, int len, void * data)
++{
++	struct mpentry * mpe = (struct mpentry *)data;
++
++	if (mpe->marginal_path_double_failed_time == MARGINAL_PATH_UNDEF)
++		return 0;
++	if (mpe->marginal_path_double_failed_time == MARGINAL_PATH_OFF)
++		return snprintf(buff, len, "no");
++	return snprintf(buff, len, "%d", mpe->marginal_path_double_failed_time);
++}
++
++static int
+ snprint_hw_fast_io_fail(char * buff, int len, void * data)
+ {
+ 	struct hwentry * hwe = (struct hwentry *)data;
+@@ -3429,6 +3738,55 @@ snprint_hw_all_tg_pt(char * buff, int le
+ }
+ 
+ static int
++snprint_hw_marginal_path_err_sample_time(char * buff, int len, void * data)
++{
++	struct hwentry * hwe = (struct hwentry *)data;
++
++	if (hwe->marginal_path_err_sample_time == MARGINAL_PATH_UNDEF)
++		return 0;
++	if (hwe->marginal_path_err_sample_time == MARGINAL_PATH_OFF)
++		return snprintf(buff, len, "no");
++	return snprintf(buff, len, "%d", hwe->marginal_path_err_sample_time);
++}
++
++static int
++snprint_hw_marginal_path_err_rate_threshold(char * buff, int len, void * data)
++{
++	struct hwentry * hwe = (struct hwentry *)data;
++
++	if (hwe->marginal_path_err_rate_threshold == MARGINAL_PATH_UNDEF)
++		return 0;
++	if (hwe->marginal_path_err_rate_threshold == MARGINAL_PATH_OFF)
++		return snprintf(buff, len, "no");
++	return snprintf(buff, len, "%d", hwe->marginal_path_err_rate_threshold);
++}
++
++static int
++snprint_hw_marginal_path_err_recheck_gap_time(char * buff, int len, void * data)
++{
++	struct hwentry * hwe = (struct hwentry *)data;
++
++	if (hwe->marginal_path_err_recheck_gap_time == MARGINAL_PATH_UNDEF)
++		return 0;
++	if (hwe->marginal_path_err_recheck_gap_time == MARGINAL_PATH_OFF)
++		return snprintf(buff, len, "no");
++	return snprintf(buff, len, "%d",
++			hwe->marginal_path_err_recheck_gap_time);
++}
++
++static int
++snprint_hw_marginal_path_double_failed_time(char * buff, int len, void * data)
++{
++	struct hwentry * hwe = (struct hwentry *)data;
++
++	if (hwe->marginal_path_double_failed_time == MARGINAL_PATH_UNDEF)
++		return 0;
++	if (hwe->marginal_path_double_failed_time == MARGINAL_PATH_OFF)
++		return snprintf(buff, len, "no");
++	return snprintf(buff, len, "%d", hwe->marginal_path_double_failed_time);
++}
++
++static int
+ snprint_def_polling_interval (char * buff, int len, void * data)
+ {
+ 	return snprintf(buff, len, "%i", conf->checkint);
+@@ -3945,6 +4303,46 @@ snprint_def_all_tg_pt(char * buff, int l
+ }
+ 
+ static int
++snprint_def_marginal_path_err_sample_time(char * buff, int len, void * data)
++{
++	if (conf->marginal_path_err_sample_time == MARGINAL_PATH_UNDEF ||
++	    conf->marginal_path_err_sample_time == MARGINAL_PATH_OFF)
++		return snprintf(buff, len, "no");
++	return snprintf(buff, len, "%d", conf->marginal_path_err_sample_time);
++}
++
++static int
++snprint_def_marginal_path_err_rate_threshold(char * buff, int len, void * data)
++{
++	if (conf->marginal_path_err_rate_threshold == MARGINAL_PATH_UNDEF ||
++	    conf->marginal_path_err_rate_threshold == MARGINAL_PATH_OFF)
++		return snprintf(buff, len, "no");
++	return snprintf(buff, len, "%d",
++			conf->marginal_path_err_rate_threshold);
++}
++
++static int
++snprint_def_marginal_path_err_recheck_gap_time(char * buff, int len,
++					       void * data)
++{
++	if (conf->marginal_path_err_recheck_gap_time == MARGINAL_PATH_UNDEF ||
++	    conf->marginal_path_err_recheck_gap_time == MARGINAL_PATH_OFF)
++		return snprintf(buff, len, "no");
++	return snprintf(buff, len, "%d",
++			conf->marginal_path_err_recheck_gap_time);
++}
++
++static int
++snprint_def_marginal_path_double_failed_time(char * buff, int len, void * data)
++{
++	if (conf->marginal_path_double_failed_time == MARGINAL_PATH_UNDEF ||
++	    conf->marginal_path_double_failed_time == MARGINAL_PATH_OFF)
++		return snprintf(buff, len, "no");
++	return snprintf(buff, len, "%d",
++			conf->marginal_path_double_failed_time);
++}
++
++static int
+ snprint_ble_simple (char * buff, int len, void * data)
+ {
+ 	struct blentry * ble = (struct blentry *)data;
+@@ -4043,6 +4441,10 @@ init_keywords(void)
+ 	install_keyword("unpriv_sgio", &def_unpriv_sgio_handler, &snprint_def_unpriv_sgio);
+ 	install_keyword("ghost_delay", &def_ghost_delay_handler, &snprint_def_ghost_delay);
+ 	install_keyword("all_tg_pt", &def_all_tg_pt_handler, &snprint_def_all_tg_pt);
++	install_keyword("marginal_path_err_sample_time", &def_marginal_path_err_sample_time_handler, &snprint_def_marginal_path_err_sample_time);
++	install_keyword("marginal_path_err_rate_threshold", &def_marginal_path_err_rate_threshold_handler, &snprint_def_marginal_path_err_rate_threshold);
++	install_keyword("marginal_path_err_recheck_gap_time", &def_marginal_path_err_recheck_gap_time_handler, &snprint_def_marginal_path_err_recheck_gap_time);
++	install_keyword("marginal_path_double_failed_time", &def_marginal_path_double_failed_time_handler, &snprint_def_marginal_path_double_failed_time);
+ 	__deprecated install_keyword("default_selector", &def_selector_handler, NULL);
+ 	__deprecated install_keyword("default_path_grouping_policy", &def_pgpolicy_handler, NULL);
+ 	__deprecated install_keyword("default_uid_attribute", &def_uid_attribute_handler, NULL);
+@@ -4120,6 +4522,10 @@ init_keywords(void)
+ 	install_keyword("unpriv_sgio", &hw_unpriv_sgio_handler, &snprint_hw_unpriv_sgio);
+ 	install_keyword("ghost_delay", &hw_ghost_delay_handler, &snprint_hw_ghost_delay);
+ 	install_keyword("all_tg_pt", &hw_all_tg_pt_handler, &snprint_hw_all_tg_pt);
++	install_keyword("marginal_path_err_sample_time", &hw_marginal_path_err_sample_time_handler, &snprint_hw_marginal_path_err_sample_time);
++	install_keyword("marginal_path_err_rate_threshold", &hw_marginal_path_err_rate_threshold_handler, &snprint_hw_marginal_path_err_rate_threshold);
++	install_keyword("marginal_path_err_recheck_gap_time", &hw_marginal_path_err_recheck_gap_time_handler, &snprint_hw_marginal_path_err_recheck_gap_time);
++	install_keyword("marginal_path_double_failed_time", &hw_marginal_path_double_failed_time_handler, &snprint_hw_marginal_path_double_failed_time);
+ 	install_sublevel_end();
+ 
+ 	install_keyword_root("overrides", &nop_handler);
+@@ -4184,5 +4590,9 @@ init_keywords(void)
+ 	install_keyword("max_sectors_kb", &mp_max_sectors_kb_handler, &snprint_mp_max_sectors_kb);
+ 	install_keyword("unpriv_sgio", &mp_unpriv_sgio_handler, &snprint_mp_unpriv_sgio);
+ 	install_keyword("ghost_delay", &mp_ghost_delay_handler, &snprint_mp_ghost_delay);
++	install_keyword("marginal_path_err_sample_time", &mp_marginal_path_err_sample_time_handler, &snprint_mp_marginal_path_err_sample_time);
++	install_keyword("marginal_path_err_rate_threshold", &mp_marginal_path_err_rate_threshold_handler, &snprint_mp_marginal_path_err_rate_threshold);
++	install_keyword("marginal_path_err_recheck_gap_time", &mp_marginal_path_err_recheck_gap_time_handler, &snprint_mp_marginal_path_err_recheck_gap_time);
++	install_keyword("marginal_path_double_failed_time", &mp_marginal_path_double_failed_time_handler, &snprint_mp_marginal_path_double_failed_time);
+ 	install_sublevel_end();
+ }
+Index: multipath-tools-130222/libmultipath/io_err_stat.c
+===================================================================
+--- /dev/null
++++ multipath-tools-130222/libmultipath/io_err_stat.c
+@@ -0,0 +1,763 @@
++/*
++ * (C) Copyright HUAWEI Technology Corp. 2017, All Rights Reserved.
++ *
++ * io_err_stat.c
++ * version 1.0
++ *
++ * IO error stream statistic process for path failure event from kernel
++ *
++ * Author(s): Guan Junxiong 2017 <guanjunxiong@huawei.com>
++ *
++ * This file is released under the GPL version 2, or any later version.
++ */
++
++#include <unistd.h>
++#include <pthread.h>
++#include <signal.h>
++#include <fcntl.h>
++#include <sys/stat.h>
++#include <sys/ioctl.h>
++#include <linux/fs.h>
++#include <libaio.h>
++#include <errno.h>
++#include <sys/mman.h>
++
++#include "vector.h"
++#include "memory.h"
++#include "checkers.h"
++#include "config.h"
++#include "structs.h"
++#include "structs_vec.h"
++#include "devmapper.h"
++#include "debug.h"
++#include "lock.h"
++#include "time-util.h"
++#include "io_err_stat.h"
++
++#define IOTIMEOUT_SEC			60
++#define TIMEOUT_NO_IO_NSEC		10000000 /*10ms = 10000000ns*/
++#define FLAKY_PATHFAIL_THRESHOLD	2
++#define CONCUR_NR_EVENT			32
++
++#define PATH_IO_ERR_IN_CHECKING		-1
++#define PATH_IO_ERR_WAITING_TO_CHECK	-2
++
++#define io_err_stat_log(prio, fmt, args...) \
++	condlog(prio, "io error statistic: " fmt, ##args)
++
++
++struct io_err_stat_pathvec {
++	pthread_mutex_t mutex;
++	vector		pathvec;
++};
++
++struct dio_ctx {
++	struct timespec	io_starttime;
++	int		blksize;
++	void		*buf;
++	struct iocb	io;
++};
++
++struct io_err_stat_path {
++	char		devname[FILE_NAME_SIZE];
++	int		fd;
++	struct dio_ctx	*dio_ctx_array;
++	int		io_err_nr;
++	int		io_nr;
++	struct timespec	start_time;
++
++	int		total_time;
++	int		err_rate_threshold;
++};
++
++pthread_t		io_err_stat_thr;
++pthread_attr_t		io_err_stat_attr;
++
++static pthread_mutex_t io_err_thread_lock = PTHREAD_MUTEX_INITIALIZER;
++static pthread_cond_t io_err_thread_cond = PTHREAD_COND_INITIALIZER;
++static int io_err_thread_running = 0;
++
++#define uatomic_read(ptr) __atomic_load_n((ptr), __ATOMIC_SEQ_CST)
++#define uatomic_set(ptr, val) __atomic_store_n((ptr), (val), __ATOMIC_SEQ_CST)
++
++static struct io_err_stat_pathvec *paths;
++struct vectors *vecs;
++io_context_t	ioctx;
++
++static void cancel_inflight_io(struct io_err_stat_path *pp);
++
++struct io_err_stat_path *find_err_path_by_dev(vector pathvec, char *dev)
++{
++	int i;
++	struct io_err_stat_path *pp;
++
++	if (!pathvec)
++		return NULL;
++	vector_foreach_slot(pathvec, pp, i)
++		if (!strcmp(pp->devname, dev))
++			return pp;
++
++	io_err_stat_log(4, "%s: not found in check queue", dev);
++
++	return NULL;
++}
++
++static int init_each_dio_ctx(struct dio_ctx *ct, int blksize,
++		unsigned long pgsize)
++{
++	ct->blksize = blksize;
++	if (posix_memalign(&ct->buf, pgsize, blksize))
++		return 1;
++	memset(ct->buf, 0, blksize);
++	ct->io_starttime.tv_sec = 0;
++	ct->io_starttime.tv_nsec = 0;
++
++	return 0;
++}
++
++static void deinit_each_dio_ctx(struct dio_ctx *ct)
++{
++	if (ct->buf)
++		free(ct->buf);
++}
++
++static int setup_directio_ctx(struct io_err_stat_path *p)
++{
++	unsigned long pgsize = getpagesize();
++	char fpath[PATH_MAX];
++	int blksize = 0;
++	int i;
++
++	if (snprintf(fpath, PATH_MAX, "/dev/%s", p->devname) >= PATH_MAX)
++		return 1;
++	if (p->fd < 0)
++		p->fd = open(fpath, O_RDONLY | O_DIRECT);
++	if (p->fd < 0)
++		return 1;
++
++	p->dio_ctx_array = MALLOC(sizeof(struct dio_ctx) * CONCUR_NR_EVENT);
++	if (!p->dio_ctx_array)
++		goto fail_close;
++
++	if (ioctl(p->fd, BLKBSZGET, &blksize) < 0) {
++		io_err_stat_log(4, "%s:cannot get blocksize, set default 512",
++				p->devname);
++		blksize = 512;
++	}
++	if (!blksize)
++		goto free_pdctx;
++
++	for (i = 0; i < CONCUR_NR_EVENT; i++) {
++		if (init_each_dio_ctx(p->dio_ctx_array + i, blksize, pgsize))
++			goto deinit;
++	}
++	return 0;
++
++deinit:
++	for (i = 0; i < CONCUR_NR_EVENT; i++)
++		deinit_each_dio_ctx(p->dio_ctx_array + i);
++free_pdctx:
++	FREE(p->dio_ctx_array);
++fail_close:
++	close(p->fd);
++
++	return 1;
++}
++
++static void destroy_directio_ctx(struct io_err_stat_path *p)
++{
++	int i;
++
++	if (!p || !p->dio_ctx_array)
++		return;
++	cancel_inflight_io(p);
++
++	for (i = 0; i < CONCUR_NR_EVENT; i++)
++		deinit_each_dio_ctx(p->dio_ctx_array + i);
++	FREE(p->dio_ctx_array);
++
++	if (p->fd > 0)
++		close(p->fd);
++}
++
++static struct io_err_stat_path *alloc_io_err_stat_path(void)
++{
++	struct io_err_stat_path *p;
++
++	p = (struct io_err_stat_path *)MALLOC(sizeof(*p));
++	if (!p)
++		return NULL;
++
++	memset(p->devname, 0, sizeof(p->devname));
++	p->io_err_nr = 0;
++	p->io_nr = 0;
++	p->total_time = 0;
++	p->start_time.tv_sec = 0;
++	p->start_time.tv_nsec = 0;
++	p->err_rate_threshold = 0;
++	p->fd = -1;
++
++	return p;
++}
++
++static void free_io_err_stat_path(struct io_err_stat_path *p)
++{
++	FREE(p);
++}
++
++static struct io_err_stat_pathvec *alloc_pathvec(void)
++{
++	struct io_err_stat_pathvec *p;
++	int r;
++
++	p = (struct io_err_stat_pathvec *)MALLOC(sizeof(*p));
++	if (!p)
++		return NULL;
++	p->pathvec = vector_alloc();
++	if (!p->pathvec)
++		goto out_free_struct_pathvec;
++	r = pthread_mutex_init(&p->mutex, NULL);
++	if (r)
++		goto out_free_member_pathvec;
++
++	return p;
++
++out_free_member_pathvec:
++	vector_free(p->pathvec);
++out_free_struct_pathvec:
++	FREE(p);
++	return NULL;
++}
++
++static void free_io_err_pathvec(struct io_err_stat_pathvec *p)
++{
++	struct io_err_stat_path *path;
++	int i;
++
++	if (!p)
++		return;
++	pthread_mutex_destroy(&p->mutex);
++	if (!p->pathvec) {
++		vector_foreach_slot(p->pathvec, path, i) {
++			destroy_directio_ctx(path);
++			free_io_err_stat_path(path);
++		}
++		vector_free(p->pathvec);
++	}
++	FREE(p);
++}
++
++/*
++ * return value
++ * 0: enqueue OK
++ * 1: fails because of internal error
++ */
++static int enqueue_io_err_stat_by_path(struct path *path)
++{
++	struct io_err_stat_path *p;
++
++	pthread_mutex_lock(&paths->mutex);
++	p = find_err_path_by_dev(paths->pathvec, path->dev);
++	if (p) {
++		pthread_mutex_unlock(&paths->mutex);
++		return 0;
++	}
++	pthread_mutex_unlock(&paths->mutex);
++
++	p = alloc_io_err_stat_path();
++	if (!p)
++		return 1;
++
++	memcpy(p->devname, path->dev, sizeof(p->devname));
++	p->total_time = path->mpp->marginal_path_err_sample_time;
++	p->err_rate_threshold = path->mpp->marginal_path_err_rate_threshold;
++
++	if (setup_directio_ctx(p))
++		goto free_ioerr_path;
++	pthread_mutex_lock(&paths->mutex);
++	if (!vector_alloc_slot(paths->pathvec))
++		goto unlock_destroy;
++	vector_set_slot(paths->pathvec, p);
++	pthread_mutex_unlock(&paths->mutex);
++
++	io_err_stat_log(2, "%s: enqueue path %s to check",
++			path->mpp->alias, path->dev);
++	return 0;
++
++unlock_destroy:
++	pthread_mutex_unlock(&paths->mutex);
++	destroy_directio_ctx(p);
++free_ioerr_path:
++	free_io_err_stat_path(p);
++
++	return 1;
++}
++
++int io_err_stat_handle_pathfail(struct path *path)
++{
++	struct timespec curr_time;
++
++	if (uatomic_read(&io_err_thread_running) == 0)
++		return 1;
++
++	if (path->io_err_disable_reinstate) {
++		io_err_stat_log(3, "%s: reinstate is already disabled",
++				path->dev);
++		return 1;
++	}
++	if (path->io_err_pathfail_cnt < 0)
++		return 1;
++
++	if (!path->mpp)
++		return 1;
++	if (path->mpp->marginal_path_double_failed_time <= 0 ||
++		path->mpp->marginal_path_err_sample_time <= 0 ||
++		path->mpp->marginal_path_err_recheck_gap_time <= 0 ||
++		path->mpp->marginal_path_err_rate_threshold < 0) {
++		io_err_stat_log(4, "%s: parameter not set", path->mpp->alias);
++		return 1;
++	}
++	if (path->mpp->marginal_path_err_sample_time < (2 * IOTIMEOUT_SEC)) {
++		io_err_stat_log(2, "%s: marginal_path_err_sample_time should not less than %d",
++				path->mpp->alias, 2 * IOTIMEOUT_SEC);
++		return 1;
++	}
++	/*
++	 * The test should only be started for paths that have failed
++	 * repeatedly in a certain time frame, so that we have reason
++	 * to assume they're flaky. Without bother the admin to configure
++	 * the repeated count threshold and time frame, we assume a path
++	 * which fails at least twice within 60 seconds is flaky.
++	 */
++	if (clock_gettime(CLOCK_MONOTONIC, &curr_time) != 0)
++		return 1;
++	if (path->io_err_pathfail_cnt == 0) {
++		path->io_err_pathfail_cnt++;
++		path->io_err_pathfail_starttime = curr_time.tv_sec;
++		io_err_stat_log(5, "%s: start path flakiness pre-checking",
++				path->dev);
++		return 0;
++	}
++	if ((curr_time.tv_sec - path->io_err_pathfail_starttime) >
++			path->mpp->marginal_path_double_failed_time) {
++		path->io_err_pathfail_cnt = 0;
++		path->io_err_pathfail_starttime = curr_time.tv_sec;
++		io_err_stat_log(5, "%s: restart path flakiness pre-checking",
++				path->dev);
++	}
++	path->io_err_pathfail_cnt++;
++	if (path->io_err_pathfail_cnt >= FLAKY_PATHFAIL_THRESHOLD) {
++		path->io_err_disable_reinstate = 1;
++		path->io_err_pathfail_cnt = PATH_IO_ERR_WAITING_TO_CHECK;
++		/* enqueue path as soon as it comes up */
++		path->io_err_dis_reinstate_time = 0;
++		if (path->state != PATH_DOWN) {
++			int oldstate = path->state;
++			io_err_stat_log(2, "%s: mark as failed", path->dev);
++			path->mpp->stat_path_failures++;
++			path->state = PATH_DOWN;
++			path->dmstate = PSTATE_FAILED;
++			if (oldstate == PATH_UP || oldstate == PATH_GHOST)
++				update_queue_mode_del_path(path->mpp);
++			if (path->tick > conf->checkint)
++				path->tick = conf->checkint;
++		}
++	}
++
++	return 0;
++}
++
++int need_io_err_check(struct path *pp)
++{
++	struct timespec curr_time;
++	int r;
++
++	if (uatomic_read(&io_err_thread_running) == 0)
++		return 0;
++	if (pp->mpp->nr_active <= 0) {
++		io_err_stat_log(2, "%s: recover path early", pp->dev);
++		goto recover;
++	}
++	if (pp->io_err_pathfail_cnt != PATH_IO_ERR_WAITING_TO_CHECK)
++		return 1;
++	if (clock_gettime(CLOCK_MONOTONIC, &curr_time) != 0 ||
++	    (curr_time.tv_sec - pp->io_err_dis_reinstate_time) >
++			pp->mpp->marginal_path_err_recheck_gap_time) {
++		io_err_stat_log(4, "%s: reschedule checking after %d seconds",
++				pp->dev,
++				pp->mpp->marginal_path_err_recheck_gap_time);
++		r = enqueue_io_err_stat_by_path(pp);
++		/*
++		 * Enqueue fails because of internal error.
++		 * In this case , we recover this path
++		 * Or else,  return 1 to set path state to PATH_SHAKY
++		 */
++		if (r == 1) {
++			io_err_stat_log(3, "%s: enqueue fails, recovering",
++					pp->dev);
++			goto recover;
++		} else
++			pp->io_err_pathfail_cnt = PATH_IO_ERR_IN_CHECKING;
++	}
++
++	return 1;
++
++recover:
++	pp->io_err_pathfail_cnt = 0;
++	pp->io_err_disable_reinstate = 0;
++	return 0;
++}
++
++static int delete_io_err_stat_by_addr(struct io_err_stat_path *p)
++{
++	int i;
++
++	i = find_slot(paths->pathvec, p);
++	if (i != -1)
++		vector_del_slot(paths->pathvec, i);
++
++	destroy_directio_ctx(p);
++	free_io_err_stat_path(p);
++
++	return 0;
++}
++
++static void account_async_io_state(struct io_err_stat_path *pp, int rc)
++{
++	switch (rc) {
++	case PATH_DOWN:
++		pp->io_err_nr++;
++		break;
++	case PATH_UNCHECKED:
++	case PATH_UP:
++	case PATH_PENDING:
++		break;
++	default:
++		break;
++	}
++}
++
++static int poll_io_err_stat(struct vectors *vecs, struct io_err_stat_path *pp)
++{
++	struct timespec currtime, difftime;
++	struct path *path;
++	double err_rate;
++
++	if (clock_gettime(CLOCK_MONOTONIC, &currtime) != 0)
++		return 1;
++	timespecsub(&currtime, &pp->start_time, &difftime);
++	if (difftime.tv_sec < pp->total_time)
++		return 0;
++
++	io_err_stat_log(4, "%s: check end", pp->devname);
++
++	err_rate = pp->io_nr == 0 ? 0 : (pp->io_err_nr * 1000.0f) / pp->io_nr;
++	io_err_stat_log(3, "%s: IO error rate (%.1f/1000)",
++			pp->devname, err_rate);
++	pthread_cleanup_push(cleanup_lock, &vecs->lock);
++	lock(vecs->lock);
++	pthread_testcancel();
++	path = find_path_by_dev(vecs->pathvec, pp->devname);
++	if (!path) {
++		io_err_stat_log(4, "path %s not found'", pp->devname);
++	} else if (err_rate <= pp->err_rate_threshold) {
++		path->io_err_pathfail_cnt = 0;
++		path->io_err_disable_reinstate = 0;
++		io_err_stat_log(3, "%s: (%d/%d) good to enable reinstating",
++				pp->devname, pp->io_err_nr, pp->io_nr);
++		/*
++		 * schedule path check as soon as possible to
++		 * update path state. Do NOT reinstate dm path here
++		 */
++		path->tick = 1;
++
++	} else if (path->mpp && path->mpp->nr_active > 0) {
++		io_err_stat_log(3, "%s: keep failing the dm path %s",
++				path->mpp->alias, path->dev);
++		path->io_err_pathfail_cnt = PATH_IO_ERR_WAITING_TO_CHECK;
++		path->io_err_disable_reinstate = 1;
++		path->io_err_dis_reinstate_time = currtime.tv_sec;
++		io_err_stat_log(3, "%s: disable reinstating of %s",
++				path->mpp->alias, path->dev);
++	} else {
++		path->io_err_pathfail_cnt = 0;
++		path->io_err_disable_reinstate = 0;
++		io_err_stat_log(3, "%s: there is orphan path, enable reinstating",
++				pp->devname);
++	}
++	lock_cleanup_pop(vecs->lock);
++
++	delete_io_err_stat_by_addr(pp);
++
++	return 0;
++}
++
++static int send_each_async_io(struct dio_ctx *ct, int fd, char *dev)
++{
++	int rc = -1;
++
++	if (ct->io_starttime.tv_nsec == 0 &&
++			ct->io_starttime.tv_sec == 0) {
++		struct iocb *ios[1] = { &ct->io };
++
++		if (clock_gettime(CLOCK_MONOTONIC, &ct->io_starttime) != 0) {
++			ct->io_starttime.tv_sec = 0;
++			ct->io_starttime.tv_nsec = 0;
++			return rc;
++		}
++		io_prep_pread(&ct->io, fd, ct->buf, ct->blksize, 0);
++		if (io_submit(ioctx, 1, ios) != 1) {
++			io_err_stat_log(5, "%s: io_submit error %i",
++					dev, errno);
++			return rc;
++		}
++		rc = 0;
++	}
++
++	return rc;
++}
++
++static void send_batch_async_ios(struct io_err_stat_path *pp)
++{
++	int i;
++	struct dio_ctx *ct;
++	struct timespec currtime, difftime;
++
++	if (clock_gettime(CLOCK_MONOTONIC, &currtime) != 0)
++		return;
++	/*
++	 * Give a free time for all IO to complete or timeout
++	 */
++	if (pp->start_time.tv_sec != 0) {
++		timespecsub(&currtime, &pp->start_time, &difftime);
++		if (difftime.tv_sec + IOTIMEOUT_SEC >= pp->total_time)
++			return;
++	}
++
++	for (i = 0; i < CONCUR_NR_EVENT; i++) {
++		ct = pp->dio_ctx_array + i;
++		if (!send_each_async_io(ct, pp->fd, pp->devname))
++			pp->io_nr++;
++	}
++	if (pp->start_time.tv_sec == 0 && pp->start_time.tv_nsec == 0 &&
++		clock_gettime(CLOCK_MONOTONIC, &pp->start_time)) {
++		pp->start_time.tv_sec = 0;
++		pp->start_time.tv_nsec = 0;
++	}
++}
++
++static int try_to_cancel_timeout_io(struct dio_ctx *ct, struct timespec *t,
++		char *dev)
++{
++	struct timespec	difftime;
++	struct io_event	event;
++	int		rc = PATH_UNCHECKED;
++	int		r;
++
++	if (ct->io_starttime.tv_sec == 0)
++		return rc;
++	timespecsub(t, &ct->io_starttime, &difftime);
++	if (difftime.tv_sec > IOTIMEOUT_SEC) {
++		struct iocb *ios[1] = { &ct->io };
++
++		io_err_stat_log(5, "%s: abort check on timeout", dev);
++		r = io_cancel(ioctx, ios[0], &event);
++		if (r)
++			io_err_stat_log(5, "%s: io_cancel error %i",
++					dev, errno);
++		ct->io_starttime.tv_sec = 0;
++		ct->io_starttime.tv_nsec = 0;
++		rc = PATH_DOWN;
++	} else {
++		rc = PATH_PENDING;
++	}
++
++	return rc;
++}
++
++static void poll_async_io_timeout(void)
++{
++	struct io_err_stat_path *pp;
++	struct timespec curr_time;
++	int		rc = PATH_UNCHECKED;
++	int		i, j;
++
++	if (clock_gettime(CLOCK_MONOTONIC, &curr_time) != 0)
++		return;
++	vector_foreach_slot(paths->pathvec, pp, i) {
++		for (j = 0; j < CONCUR_NR_EVENT; j++) {
++			rc = try_to_cancel_timeout_io(pp->dio_ctx_array + j,
++					&curr_time, pp->devname);
++			account_async_io_state(pp, rc);
++		}
++	}
++}
++
++static void cancel_inflight_io(struct io_err_stat_path *pp)
++{
++	struct io_event event;
++	int i, r;
++
++	for (i = 0; i < CONCUR_NR_EVENT; i++) {
++		struct dio_ctx *ct = pp->dio_ctx_array + i;
++		struct iocb *ios[1] = { &ct->io };
++
++		if (ct->io_starttime.tv_sec == 0
++				&& ct->io_starttime.tv_nsec == 0)
++			continue;
++		io_err_stat_log(5, "%s: abort infligh io",
++				pp->devname);
++		r = io_cancel(ioctx, ios[0], &event);
++		if (r)
++			io_err_stat_log(5, "%s: io_cancel error %d, %i",
++					pp->devname, r, errno);
++		ct->io_starttime.tv_sec = 0;
++		ct->io_starttime.tv_nsec = 0;
++	}
++}
++
++static inline int handle_done_dio_ctx(struct dio_ctx *ct, struct io_event *ev)
++{
++	ct->io_starttime.tv_sec = 0;
++	ct->io_starttime.tv_nsec = 0;
++	return (ev->res == ct->blksize) ? PATH_UP : PATH_DOWN;
++}
++
++static void handle_async_io_done_event(struct io_event *io_evt)
++{
++	struct io_err_stat_path *pp;
++	struct dio_ctx *ct;
++	int rc = PATH_UNCHECKED;
++	int i, j;
++
++	vector_foreach_slot(paths->pathvec, pp, i) {
++		for (j = 0; j < CONCUR_NR_EVENT; j++) {
++			ct = pp->dio_ctx_array + j;
++			if (&ct->io == io_evt->obj) {
++				rc = handle_done_dio_ctx(ct, io_evt);
++				account_async_io_state(pp, rc);
++				return;
++			}
++		}
++	}
++}
++
++static void process_async_ios_event(int timeout_nsecs, char *dev)
++{
++	struct io_event events[CONCUR_NR_EVENT];
++	int		i, n;
++	struct timespec	timeout = { .tv_nsec = timeout_nsecs };
++
++	errno = 0;
++	n = io_getevents(ioctx, 1L, CONCUR_NR_EVENT, events, &timeout);
++	if (n < 0) {
++		io_err_stat_log(3, "%s: async io events returned %d (errno=%s)",
++				dev, n, strerror(errno));
++	} else {
++		for (i = 0; i < n; i++)
++			handle_async_io_done_event(&events[i]);
++	}
++}
++
++static void service_paths(void)
++{
++	struct io_err_stat_path *pp;
++	int i;
++
++	pthread_mutex_lock(&paths->mutex);
++	vector_foreach_slot(paths->pathvec, pp, i) {
++		send_batch_async_ios(pp);
++		process_async_ios_event(TIMEOUT_NO_IO_NSEC, pp->devname);
++		poll_async_io_timeout();
++		poll_io_err_stat(vecs, pp);
++	}
++	pthread_mutex_unlock(&paths->mutex);
++}
++
++static void cleanup_unlock(void *arg)
++{
++	pthread_mutex_unlock((pthread_mutex_t*) arg);
++}
++
++static void cleanup_exited(void *arg)
++{
++	uatomic_set(&io_err_thread_running, 0);
++}
++
++static void *io_err_stat_loop(void *data)
++{
++	vecs = (struct vectors *)data;
++
++	pthread_cleanup_push(cleanup_exited, NULL);
++
++	mlockall(MCL_CURRENT | MCL_FUTURE);
++
++	pthread_mutex_lock(&io_err_thread_lock);
++	uatomic_set(&io_err_thread_running, 1);
++	pthread_cond_broadcast(&io_err_thread_cond);
++	pthread_mutex_unlock(&io_err_thread_lock);
++
++	while (1) {
++		service_paths();
++		usleep(100000);
++	}
++
++	pthread_cleanup_pop(1);
++	return NULL;
++}
++
++int start_io_err_stat_thread(void *data)
++{
++	int ret;
++
++	if (uatomic_read(&io_err_thread_running) == 1)
++		return 0;
++
++	if (io_setup(CONCUR_NR_EVENT, &ioctx) != 0) {
++		io_err_stat_log(4, "io_setup failed");
++		return 1;
++	}
++	paths = alloc_pathvec();
++	if (!paths)
++		goto destroy_ctx;
++
++	pthread_mutex_lock(&io_err_thread_lock);
++	pthread_cleanup_push(cleanup_unlock, &io_err_thread_lock);
++
++	ret = pthread_create(&io_err_stat_thr, &io_err_stat_attr,
++			     io_err_stat_loop, data);
++
++	while (!ret && !uatomic_read(&io_err_thread_running) &&
++	       pthread_cond_wait(&io_err_thread_cond,
++				 &io_err_thread_lock) == 0);
++
++	pthread_cleanup_pop(1);
++
++	if (ret) {
++		io_err_stat_log(0, "cannot create io_error statistic thread");
++		goto out_free;
++	}
++
++	io_err_stat_log(2, "io_error statistic thread started");
++	return 0;
++
++out_free:
++	free_io_err_pathvec(paths);
++destroy_ctx:
++	io_destroy(ioctx);
++	io_err_stat_log(0, "failed to start io_error statistic thread");
++	return 1;
++}
++
++void stop_io_err_stat_thread(void)
++{
++	if (io_err_stat_thr == (pthread_t)0)
++		return;
++
++	if (uatomic_read(&io_err_thread_running) == 1)
++		pthread_cancel(io_err_stat_thr);
++
++	pthread_join(io_err_stat_thr, NULL);
++	free_io_err_pathvec(paths);
++	io_destroy(ioctx);
++}
+Index: multipath-tools-130222/libmultipath/io_err_stat.h
+===================================================================
+--- /dev/null
++++ multipath-tools-130222/libmultipath/io_err_stat.h
+@@ -0,0 +1,15 @@
++#ifndef _IO_ERR_STAT_H
++#define _IO_ERR_STAT_H
++
++#include "vector.h"
++#include "lock.h"
++
++
++extern pthread_attr_t io_err_stat_attr;
++
++int start_io_err_stat_thread(void *data);
++void stop_io_err_stat_thread(void);
++int io_err_stat_handle_pathfail(struct path *path);
++int need_io_err_check(struct path *pp);
++
++#endif /* _IO_ERR_STAT_H */
+Index: multipath-tools-130222/libmultipath/propsel.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/propsel.c
++++ multipath-tools-130222/libmultipath/propsel.c
+@@ -956,6 +956,104 @@ select_delay_wait_checks (struct multipa
+ }
+ 
+ extern int
++select_marginal_path_err_sample_time(struct multipath * mp)
++{
++	if (mp->mpe &&
++	    mp->mpe->marginal_path_err_sample_time != MARGINAL_PATH_UNDEF) {
++		mp->marginal_path_err_sample_time = mp->mpe->marginal_path_err_sample_time;
++		condlog(3, "marginal_path_err_sample_time = %i (multipath setting)", mp->marginal_path_err_sample_time);
++		return 0;
++	}
++	if (mp->hwe &&
++	    mp->hwe->marginal_path_err_sample_time != MARGINAL_PATH_UNDEF) {
++		mp->marginal_path_err_sample_time = mp->hwe->marginal_path_err_sample_time;
++		condlog(3, "marginal_path_err_sample_time = %i (controler setting)", mp->marginal_path_err_sample_time);
++		return 0;
++	}
++	if (conf->marginal_path_err_sample_time != MARGINAL_PATH_UNDEF) {
++		mp->marginal_path_err_sample_time = conf->marginal_path_err_sample_time;
++		condlog(3, "marginal_path_err_sample_time = %i (config file default)", mp->marginal_path_err_sample_time);
++		return 0;
++	}
++	mp->marginal_path_err_sample_time = DEFAULT_DELAY_CHECKS;
++	condlog(3, "marginal_path_err_sample_time = DISABLED (internal default)");
++	return 0;
++}
++
++extern int
++select_marginal_path_err_rate_threshold(struct multipath * mp)
++{
++	if (mp->mpe &&
++	    mp->mpe->marginal_path_err_rate_threshold != MARGINAL_PATH_UNDEF) {
++		mp->marginal_path_err_rate_threshold = mp->mpe->marginal_path_err_rate_threshold;
++		condlog(3, "marginal_path_err_rate_threshold = %i (multipath setting)", mp->marginal_path_err_rate_threshold);
++		return 0;
++	}
++	if (mp->hwe &&
++	    mp->hwe->marginal_path_err_rate_threshold != MARGINAL_PATH_UNDEF) {
++		mp->marginal_path_err_rate_threshold = mp->hwe->marginal_path_err_rate_threshold;
++		condlog(3, "marginal_path_err_rate_threshold = %i (controler setting)", mp->marginal_path_err_rate_threshold);
++		return 0;
++	}
++	if (conf->marginal_path_err_rate_threshold != MARGINAL_PATH_UNDEF) {
++		mp->marginal_path_err_rate_threshold = conf->marginal_path_err_rate_threshold;
++		condlog(3, "marginal_path_err_rate_threshold = %i (config file default)", mp->marginal_path_err_rate_threshold);
++		return 0;
++	}
++	mp->marginal_path_err_rate_threshold = DEFAULT_DELAY_CHECKS;
++	condlog(3, "marginal_path_err_rate_threshold = DISABLED (internal default)");
++	return 0;
++}
++
++extern int
++select_marginal_path_err_recheck_gap_time(struct multipath * mp)
++{
++	if (mp->mpe && mp->mpe->marginal_path_err_recheck_gap_time != MARGINAL_PATH_UNDEF) {
++		mp->marginal_path_err_recheck_gap_time = mp->mpe->marginal_path_err_recheck_gap_time;
++		condlog(3, "marginal_path_err_recheck_gap_time = %i (multipath setting)", mp->marginal_path_err_recheck_gap_time);
++		return 0;
++	}
++	if (mp->hwe && mp->hwe->marginal_path_err_recheck_gap_time != MARGINAL_PATH_UNDEF) {
++		mp->marginal_path_err_recheck_gap_time = mp->hwe->marginal_path_err_recheck_gap_time;
++		condlog(3, "marginal_path_err_recheck_gap_time = %i (controler setting)", mp->marginal_path_err_recheck_gap_time);
++		return 0;
++	}
++	if (conf->marginal_path_err_recheck_gap_time != MARGINAL_PATH_UNDEF) {
++		mp->marginal_path_err_recheck_gap_time = conf->marginal_path_err_recheck_gap_time;
++		condlog(3, "marginal_path_err_recheck_gap_time = %i (config file default)", mp->marginal_path_err_recheck_gap_time);
++		return 0;
++	}
++	mp->marginal_path_err_recheck_gap_time = DEFAULT_DELAY_CHECKS;
++	condlog(3, "marginal_path_err_recheck_gap_time = DISABLED (internal default)");
++	return 0;
++}
++
++extern int
++select_marginal_path_double_failed_time(struct multipath * mp)
++{
++	if (mp->mpe &&
++	    mp->mpe->marginal_path_double_failed_time != MARGINAL_PATH_UNDEF) {
++		mp->marginal_path_double_failed_time = mp->mpe->marginal_path_double_failed_time;
++		condlog(3, "marginal_path_double_failed_time = %i (multipath setting)", mp->marginal_path_double_failed_time);
++		return 0;
++	}
++	if (mp->hwe &&
++	    mp->hwe->marginal_path_double_failed_time != MARGINAL_PATH_UNDEF) {
++		mp->marginal_path_double_failed_time = mp->hwe->marginal_path_double_failed_time;
++		condlog(3, "marginal_path_double_failed_time = %i (controler setting)", mp->marginal_path_double_failed_time);
++		return 0;
++	}
++	if (conf->marginal_path_double_failed_time != MARGINAL_PATH_UNDEF) {
++		mp->marginal_path_double_failed_time = conf->marginal_path_double_failed_time;
++		condlog(3, "marginal_path_double_failed_time = %i (config file default)", mp->marginal_path_double_failed_time);
++		return 0;
++	}
++	mp->marginal_path_double_failed_time = DEFAULT_DELAY_CHECKS;
++	condlog(3, "marginal_path_double_failed_time = DISABLED (internal default)");
++	return 0;
++}
++
++extern int
+ select_skip_kpartx (struct multipath * mp)
+ {
+ 	if (mp->mpe && mp->mpe->skip_kpartx != SKIP_KPARTX_UNDEF) {
+Index: multipath-tools-130222/libmultipath/propsel.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/propsel.h
++++ multipath-tools-130222/libmultipath/propsel.h
+@@ -24,6 +24,10 @@ int select_detect_checker(struct path *
+ int select_deferred_remove(struct multipath *mp);
+ int select_delay_watch_checks (struct multipath * mp);
+ int select_delay_wait_checks (struct multipath * mp);
++int select_marginal_path_err_sample_time(struct multipath *mp);
++int select_marginal_path_err_rate_threshold(struct multipath *mp);
++int select_marginal_path_err_recheck_gap_time(struct multipath *mp);
++int select_marginal_path_double_failed_time(struct multipath *mp);
+ int select_skip_kpartx (struct multipath * mp);
+ int select_max_sectors_kb (struct multipath * mp);
+ int select_unpriv_sgio (struct multipath * mp);
+Index: multipath-tools-130222/libmultipath/structs.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/structs.h
++++ multipath-tools-130222/libmultipath/structs.h
+@@ -3,6 +3,7 @@
+ 
+ #include <sys/types.h>
+ #include <inttypes.h>
++#include <time.h>
+ 
+ #include "prio.h"
+ #include "byteorder.h"
+@@ -176,6 +177,11 @@ enum delay_checks_states {
+ 	DELAY_CHECKS_UNDEF = 0,
+ };
+ 
++enum marginal_path_states {
++	MARGINAL_PATH_OFF = -1,
++	MARGINAL_PATH_UNDEF = 0,
++};
++
+ enum missing_udev_info_states {
+ 	INFO_OK,
+ 	INFO_MISSING,
+@@ -252,6 +258,10 @@ struct path {
+ 	int missing_udev_info;
+ 	int retriggers;
+ 	int wwid_changed;
++	time_t io_err_dis_reinstate_time;
++	int io_err_disable_reinstate;
++	int io_err_pathfail_cnt;
++	int io_err_pathfail_starttime;
+ 
+ 	/* configlet pointers */
+ 	struct hwentry * hwe;
+@@ -285,6 +295,10 @@ struct multipath {
+ 	int deferred_remove;
+ 	int delay_watch_checks;
+ 	int delay_wait_checks;
++	int marginal_path_err_sample_time;
++	int marginal_path_err_rate_threshold;
++	int marginal_path_err_recheck_gap_time;
++	int marginal_path_double_failed_time;
+ 	int force_udev_reload;
+ 	int skip_kpartx;
+ 	int max_sectors_kb;
+Index: multipath-tools-130222/libmultipath/time-util.c
+===================================================================
+--- /dev/null
++++ multipath-tools-130222/libmultipath/time-util.c
+@@ -0,0 +1,42 @@
++#include <assert.h>
++#include <pthread.h>
++#include <time.h>
++#include "time-util.h"
++
++/* Initialize @cond as a condition variable that uses the monotonic clock */
++void pthread_cond_init_mono(pthread_cond_t *cond)
++{
++	pthread_condattr_t attr;
++	int res;
++
++	res = pthread_condattr_init(&attr);
++	assert(res == 0);
++	res = pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
++	assert(res == 0);
++	res = pthread_cond_init(cond, &attr);
++	assert(res == 0);
++	res = pthread_condattr_destroy(&attr);
++	assert(res == 0);
++}
++
++/* Ensure that 0 <= ts->tv_nsec && ts->tv_nsec < 1000 * 1000 * 1000. */
++void normalize_timespec(struct timespec *ts)
++{
++	while (ts->tv_nsec < 0) {
++		ts->tv_nsec += 1000UL * 1000 * 1000;
++		ts->tv_sec--;
++	}
++	while (ts->tv_nsec >= 1000UL * 1000 * 1000) {
++		ts->tv_nsec -= 1000UL * 1000 * 1000;
++		ts->tv_sec++;
++	}
++}
++
++/* Compute *res = *a - *b */
++void timespecsub(const struct timespec *a, const struct timespec *b,
++		 struct timespec *res)
++{
++	res->tv_sec = a->tv_sec - b->tv_sec;
++	res->tv_nsec = a->tv_nsec - b->tv_nsec;
++	normalize_timespec(res);
++}
+Index: multipath-tools-130222/libmultipath/time-util.h
+===================================================================
+--- /dev/null
++++ multipath-tools-130222/libmultipath/time-util.h
+@@ -0,0 +1,13 @@
++#ifndef _TIME_UTIL_H_
++#define _TIME_UTIL_H_
++
++#include <pthread.h>
++
++struct timespec;
++
++void pthread_cond_init_mono(pthread_cond_t *cond);
++void normalize_timespec(struct timespec *ts);
++void timespecsub(const struct timespec *a, const struct timespec *b,
++		 struct timespec *res);
++
++#endif /* _TIME_UTIL_H_ */
+Index: multipath-tools-130222/libmultipath/uevent.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/uevent.c
++++ multipath-tools-130222/libmultipath/uevent.c
+@@ -616,12 +616,46 @@ uevent_get_dm_name(struct uevent *uev)
+ 	int i;
+ 
+ 	for (i = 0; uev->envp[i] != NULL; i++) {
+-		if (!strncmp(uev->envp[i], "DM_NAME", 6) &&
+-		    strlen(uev->envp[i]) > 7) {
++		if (!strncmp(uev->envp[i], "DM_NAME", 7) &&
++		    strlen(uev->envp[i]) > 8) {
+ 			p = MALLOC(strlen(uev->envp[i] + 8) + 1);
+ 			strcpy(p, uev->envp[i] + 8);
+ 			break;
+ 		}
+ 	}
++	return p;
++}
++
++extern char *
++uevent_get_dm_path(struct uevent *uev)
++{
++	char *p = NULL;
++	int i;
++
++	for (i = 0; uev->envp[i] != NULL; i++) {
++		if (!strncmp(uev->envp[i], "DM_PATH", 7) &&
++		    strlen(uev->envp[i]) > 8) {
++			p = MALLOC(strlen(uev->envp[i] + 8) + 1);
++			strcpy(p, uev->envp[i] + 8);
++			break;
++		}
++	}
++	return p;
++}
++
++extern char *
++uevent_get_dm_action(struct uevent *uev)
++{
++	char *p = NULL;
++	int i;
++
++	for (i = 0; uev->envp[i] != NULL; i++) {
++		if (!strncmp(uev->envp[i], "DM_ACTION", 9) &&
++		    strlen(uev->envp[i]) > 10) {
++			p = MALLOC(strlen(uev->envp[i] + 10) + 1);
++			strcpy(p, uev->envp[i] + 10);
++			break;
++		}
++	}
+ 	return p;
+ }
+Index: multipath-tools-130222/libmultipath/uevent.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/uevent.h
++++ multipath-tools-130222/libmultipath/uevent.h
+@@ -36,5 +36,7 @@ int uevent_get_major(struct uevent *uev)
+ int uevent_get_minor(struct uevent *uev);
+ int uevent_get_disk_ro(struct uevent *uev);
+ char *uevent_get_dm_name(struct uevent *uev);
++char *uevent_get_dm_path(struct uevent *uev);
++char *uevent_get_dm_action(struct uevent *uev);
+ 
+ #endif /* _UEVENT_H */
+Index: multipath-tools-130222/multipath/multipath.conf.5
+===================================================================
+--- multipath-tools-130222.orig/multipath/multipath.conf.5
++++ multipath-tools-130222/multipath/multipath.conf.5
+@@ -527,7 +527,7 @@ recently become valid for this many chec
+ being watched, when they next become valid, they will not be used until they
+ have stayed up for
+ .I delay_wait_checks
+-checks. Default is
++checks. See "Shaky paths detection" below. Default is
+ .I no
+ .TP
+ .B delay_wait_checks
+@@ -537,9 +537,56 @@ online fails again within
+ checks, the next time it comes back online, it will marked and delayed, and not
+ used until it has passed
+ .I delay_wait_checks
+-checks. Default is
++checks. See "Shaky paths detection" below. Default is
+ .I no
+ .TP
++.B marginal_path_double_failed_time
++One of the four parameters of supporting path check based on accounting IO
++error such as intermittent error. When a path failed event occurs twice in
++\fImarginal_path_double_failed_time\fR seconds due to an IO error and all the
++other three parameters are set, multipathd will fail the path and enqueue
++this path into a queue of which members are sent a couple of continuous
++direct reading asynchronous IOs at a fixed sample rate of 10HZ to start IO
++error accounting process. See "Shaky paths detection" below. Default is
++\fIno\fR
++.TP
++.B marginal_path_err_sample_time
++One of the four parameters of supporting path check based on accounting IO
++error such as intermittent error. If it is set to a value no less than 120,
++when a path fail event occurs twice in \fImarginal_path_double_failed_time\fR
++second due to an IO error, multipathd will fail the path and enqueue this
++path into a queue of which members are sent a couple of continuous direct
++reading asynchronous IOs at a fixed sample rate of 10HZ to start the IO
++accounting process for the path will last for
++\fImarginal_path_err_sample_time\fR.
++If the rate of IO error on a particular path is greater than the
++\fImarginal_path_err_rate_threshold\fR, then the path will not reinstate for
++\fImarginal_path_err_recheck_gap_time\fR seconds unless there is only one
++active path. After \fImarginal_path_err_recheck_gap_time\fR expires, the path
++will be requeueed for rechecking. If checking result is good enough, the
++path will be reinstated. See "Shaky paths detection" below. Default is
++\fIno\fR
++.TP
++.B marginal_path_err_rate_threshold
++The error rate threshold as a permillage (1/1000). One of the four parameters
++of supporting path check based on accounting IO error such as intermittent
++error. Refer to \fImarginal_path_err_sample_time\fR. If the rate of IO errors
++on a particular path is greater than this parameter, then the path will not
++reinstate for \fImarginal_path_err_recheck_gap_time\fR seconds unless there is
++only one active path. See "Shaky paths detection" below. Default is \fIno\fR
++.TP
++.B marginal_path_err_recheck_gap_time
++One of the four parameters of supporting path check based on accounting IO
++error such as intermittent error. Refer to
++\fImarginal_path_err_sample_time\fR. If this parameter is set to a positive
++value, the failed path of  which the IO error rate is larger than
++\fImarginal_path_err_rate_threshold\fR will be kept in failed state for
++\fImarginal_path_err_recheck_gap_time\fR seconds. When
++\fImarginal_path_err_recheck_gap_time\fR seconds expires, the path will be
++requeueed for checking. If checking result is good enough, the path will be
++reinstated, or else it will keep failed. See "Shaky paths detection" below.
++Default is \fIno\fR
++.TP
+ .B missing_uev_wait_timeout
+ Controls how many seconds multipathd will wait, after a new multipath device
+ is created, to receive a change event from udev for the device, before
+@@ -771,6 +818,14 @@ section:
+ .TP
+ .B delay_wait_checks
+ .TP
++.B marginal_path_err_sample_time
++.TP
++.B marginal_path_err_rate_threshold
++.TP
++.B marginal_path_err_recheck_gap_time
++.TP
++.B marginal_path_double_failed_time
++.TP
+ .B skip_kpartx
+ .TP
+ .B max_sectors_kb
+@@ -877,6 +932,14 @@ section:
+ .TP
+ .B delay_wait_checks
+ .TP
++.B marginal_path_err_sample_time
++.TP
++.B marginal_path_err_rate_threshold
++.TP
++.B marginal_path_err_recheck_gap_time
++.TP
++.B marginal_path_double_failed_time
++.TP
+ .B skip_kpartx
+ .TP
+ .B max_sectors_kb
+@@ -887,6 +950,47 @@ section:
+ .RE
+ .PD
+ .LP
++.SH "Shaky paths detection"
++A common problem in SAN setups is the occurence of intermittent errors: a
++path is unreachable, then reachable again for a short time, disappears again,
++and so forth. This happens typically on unstable interconnects. It is
++undesirable to switch pathgroups unnecessarily on such frequent, unreliable
++events. \fImultipathd\fR supports two different methods for detecting this
++situation and dealing with it. Both methods share the same basic mode of
++operation: If a path is found to be \(dqshaky\(dq or \(dqflipping\(dq,
++and appears to be in healthy status, it is not reinstated (put back to use)
++immediately. Instead, it is watched for some time, and only reinstated
++if the healthy state appears to be stable. The logic of determining
++\(dqshaky\(dq condition, as well as the logic when to reinstate,
++differs between the two methods.
++.TP 8
++.B \(dqdelay_checks\(dq failure tracking
++If a path fails again within a
++\fIdelay_watch_checks\fR interval after a failure, don't
++reinstate it until it passes a \fIdelay_wait_checks\fR interval
++in always good status.
++The intervals are measured in \(dqticks\(dq, i.e. the
++time between path checks by multipathd, which is variable and controlled by the
++\fIpolling_interval\fR and \fImax_polling_interval\fR parameters.
++.TP
++.B \(dqmarginal_path\(dq failure tracking
++If a second failure event (good->bad transition) occurs within
++\fImarginal_path_double_failed_time\fR seconds after a failure, high-frequency
++monitoring is started for the affected path: I/O is sent at a rate of 10 per
++second. This is done for \fImarginal_path_err_sample_time\fR seconds. During
++this period, the path is not reinstated. If the
++rate of errors remains below \fImarginal_path_err_rate_threshold\fR during the
++monitoring period, the path is reinstated. Otherwise, it
++is kept in failed state for \fImarginal_path_err_recheck_gap_time\fR, and
++after that, it is monitored again. For this method, time intervals are measured
++in seconds.
++.RE
++.LP
++See the documentation
++of the individual options above for details.
++It is \fBstrongly discouraged\fR to use more than one of these methods for any
++given multipath map, because the two concurrent methods may interact in
++unpredictable ways.
+ .SH "KNOWN ISSUES"
+ The usage of
+ .B queue_if_no_path
+Index: multipath-tools-130222/multipathd/cli_handlers.c
+===================================================================
+--- multipath-tools-130222.orig/multipathd/cli_handlers.c
++++ multipath-tools-130222/multipathd/cli_handlers.c
+@@ -721,7 +721,7 @@ int resize_map(struct multipath *mpp, un
+ 
+ 	mpp->size = size;
+ 	update_mpp_paths(mpp, vecs->pathvec);
+-	setup_map(mpp, params, PARAMS_SIZE);
++	setup_map(mpp, params, PARAMS_SIZE, vecs);
+ 	mpp->action = ACT_RESIZE;
+ 	if (domap(mpp, params) <= 0) {
+ 		condlog(0, "%s: failed to resize map : %s", mpp->alias,
+Index: multipath-tools-130222/multipathd/main.c
+===================================================================
+--- multipath-tools-130222.orig/multipathd/main.c
++++ multipath-tools-130222/multipathd/main.c
+@@ -56,6 +56,7 @@
+ #include <log.h>
+ #include <file.h>
+ #include <prkey.h>
++#include <io_err_stat.h>
+ 
+ #include "main.h"
+ #include "pidfile.h"
+@@ -274,7 +275,7 @@ retry:
+ 	mpp->action = ACT_RELOAD;
+ 
+ 	extract_hwe_from_path(mpp);
+-	if (setup_map(mpp, params, PARAMS_SIZE)) {
++	if (setup_map(mpp, params, PARAMS_SIZE, vecs)) {
+ 		condlog(0, "%s: failed to setup new map in update", mpp->alias);
+ 		retries = -1;
+ 		goto fail;
+@@ -638,7 +639,7 @@ rescan:
+ 	/*
+ 	 * push the map to the device-mapper
+ 	 */
+-	if (setup_map(mpp, params, PARAMS_SIZE)) {
++	if (setup_map(mpp, params, PARAMS_SIZE, vecs)) {
+ 		condlog(0, "%s: failed to setup map for addition of new "
+ 			"path %s", mpp->alias, pp->dev);
+ 		goto fail_map;
+@@ -771,7 +772,7 @@ ev_remove_path (struct path *pp, struct
+ 			 */
+ 		}
+ 
+-		if (setup_map(mpp, params, PARAMS_SIZE)) {
++		if (setup_map(mpp, params, PARAMS_SIZE, vecs)) {
+ 			condlog(0, "%s: failed to setup map for"
+ 				" removal of path %s", mpp->alias, pp->dev);
+ 			goto fail;
+@@ -891,6 +892,41 @@ uev_update_path (struct uevent *uev, str
+ }
+ 
+ static int
++uev_pathfail_check(struct uevent *uev, struct vectors *vecs)
++{
++	char *action = NULL, *devt = NULL;
++	struct path *pp;
++	int r = 1;
++
++	action = uevent_get_dm_action(uev);
++	if (!action)
++		return 1;
++	if (strncmp(action, "PATH_FAILED", 11))
++		goto out;
++	devt = uevent_get_dm_path(uev);
++	if (!devt) {
++		condlog(3, "%s: No DM_PATH in uevent", uev->kernel);
++		goto out;
++	}
++
++	pp = find_path_by_devt(vecs->pathvec, devt);
++	if (!pp)
++		goto out_devt;
++	r = io_err_stat_handle_pathfail(pp);
++
++	if (r)
++		condlog(3, "io_err_stat: %s: cannot handle pathfail uevent",
++			pp->dev);
++out_devt:
++	FREE(devt);
++	FREE(action);
++	return r;
++out:
++	FREE(action);
++	return 1;
++}
++
++static int
+ map_discovery (struct vectors * vecs)
+ {
+ 	struct multipath * mpp;
+@@ -974,6 +1010,14 @@ uev_trigger (struct uevent * uev, void *
+ 	if (!strncmp(uev->kernel, "dm-", 3)) {
+ 		if (!strncmp(uev->action, "change", 6)) {
+ 			r = uev_add_map(uev, vecs);
++
++			/*
++			 * the kernel-side dm-mpath issues a PATH_FAILED event
++			 * when it encounters a path IO error. It is reason-
++			 * able be the entry of path IO error accounting pro-
++			 * cess.
++			 */
++			uev_pathfail_check(uev, vecs);
+ 			goto out;
+ 		}
+ 		if (!strncmp(uev->action, "remove", 6)) {
+@@ -1405,6 +1449,17 @@ check_path (struct vectors * vecs, struc
+ 		return;
+ 
+ 	if ((newstate == PATH_UP || newstate == PATH_GHOST) &&
++	    pp->io_err_disable_reinstate && need_io_err_check(pp)) {
++		pp->state = PATH_SHAKY;
++		/*
++		 * to reschedule as soon as possible,so that this path can
++		 * be recoverd in time
++		 */
++		pp->tick = 1;
++		return;
++	}
++
++	if ((newstate == PATH_UP || newstate == PATH_GHOST) &&
+ 	     pp->wait_checks > 0) {
+ 		if (pp->mpp && pp->mpp->nr_active > 0) {
+ 			pp->state = PATH_DELAYED;
+@@ -1955,6 +2010,7 @@ child (void * param)
+ 	setup_thread_attr(&misc_attr, 64 * 1024, 1);
+ 	setup_thread_attr(&uevent_attr, 128 * 1024, 1);
+ 	setup_thread_attr(&waiter_attr, 32 * 1024, 1);
++	setup_thread_attr(&io_err_stat_attr, 32 * 1024, 0);
+ 
+ 	if (logsink) {
+ 		setup_thread_attr(&log_attr, 64 * 1024, 0);
+@@ -2097,6 +2153,8 @@ child (void * param)
+ 	*/
+ 	cleanup_checkers();
+ 	cleanup_prio();
++	stop_io_err_stat_thread();
++	pthread_attr_destroy(&io_err_stat_attr);
+ 
+ 	dm_lib_release();
+ 	dm_lib_exit();
