@@ -1,0 +1,32 @@
+---
+ mpathpersist/main.c         |    2 ++
+ mpathpersist/mpathpersist.8 |    3 +++
+ 2 files changed, 5 insertions(+)
+
+Index: multipath-tools-130222/mpathpersist/main.c
+===================================================================
+--- multipath-tools-130222.orig/mpathpersist/main.c
++++ multipath-tools-130222/mpathpersist/main.c
+@@ -677,6 +677,8 @@ static void usage()
+ 			"    --out|-o                   request PR Out command\n"
+ 			"    --param-aptpl|-Z           PR Out parameter 'APTPL'\n"
+ 			"    --read-keys|-k             PR In: Read Keys\n"
++			"    --param-rk=RK|-K RK        PR Out parameter reservation "
++		        "key\n"
+ 			"    --param-sark=SARK|-S SARK  PR Out parameter service "
+ 			"action\n"
+ 			"                               reservation key (SARK is in "
+Index: multipath-tools-130222/mpathpersist/mpathpersist.8
+===================================================================
+--- multipath-tools-130222.orig/mpathpersist/mpathpersist.8
++++ multipath-tools-130222/mpathpersist/mpathpersist.8
+@@ -48,6 +48,9 @@ PR Out parameter 'APTPL'
+ \fB\-\-read\-keys\fR|\-k
+ PR In: Read Keys
+ .TP
++\fB\-\-param\-rk\fR=\fIRK\fR|\-K RK
++PR Out parameter reservation key (RK is in hex)
++.TP
+ \fB\-\-param\-sark\fR=\fISARK\fR|\-S SARK
+ PR Out parameter service action
+ reservation key (SARK is in hex)

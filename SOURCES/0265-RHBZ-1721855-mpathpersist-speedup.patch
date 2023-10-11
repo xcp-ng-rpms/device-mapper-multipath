@@ -1,0 +1,1175 @@
+---
+ libmpathpersist/mpath_persist.c |  230 +++++++++++------------
+ libmpathpersist/mpath_persist.h |   40 ++++
+ mpathpersist/main.c             |  223 ++++++++++++++++++-----
+ mpathpersist/main.h             |    1 
+ mpathpersist/mpathpersist.8     |  385 ++++++++++++++++++++++++++++++----------
+ 5 files changed, 616 insertions(+), 263 deletions(-)
+
+Index: multipath-tools-130222/mpathpersist/main.c
+===================================================================
+--- multipath-tools-130222.orig/mpathpersist/main.c
++++ multipath-tools-130222/mpathpersist/main.c
+@@ -18,6 +18,7 @@
+ #include <pthread.h>
+ #include <ctype.h>
+ #include <string.h>
++#include <errno.h>
+ 
+ static const char * pr_type_strs[] = {
+ 	"obsolete [0]",
+@@ -46,9 +47,101 @@ int construct_transportid(const char * i
+ int logsink;
+ unsigned int mpath_mx_alloc_len;
+ 
+-int main (int argc, char * argv[])
++static int verbose, loglevel, noisy;
++
++static int handle_args(int argc, char * argv[], int line);
++
++static int do_batch_file(const char *batch_fn)
+ {
+-	int fd, c, res;
++	char command[] = "mpathpersist";
++	const int ARGV_CHUNK = 2;
++	const char delims[] = " \t\n";
++	size_t len = 0;
++	char *line = NULL;
++	ssize_t n;
++	int nline = 0;
++	int argl = ARGV_CHUNK;
++	FILE *fl;
++	char **argv = calloc(argl, sizeof(*argv));
++	int ret = MPATH_PR_SUCCESS;
++
++	if (argv == NULL)
++		return MPATH_PR_OTHER;
++
++	fl = fopen(batch_fn, "r");
++	if (fl == NULL) {
++		fprintf(stderr, "unable to open %s: %s\n",
++			batch_fn, strerror(errno));
++		free(argv);
++		return MPATH_PR_SYNTAX_ERROR;
++	} else {
++		if (verbose >= 2)
++			fprintf(stderr, "running batch file %s\n",
++				batch_fn);
++	}
++
++	while ((n = getline(&line, &len, fl)) != -1) {
++		char *_token, *token;
++		int argc = 0;
++		int rv;
++
++		nline++;
++		argv[argc++] = command;
++
++		if (line[n-1] == '\n')
++			line[n-1] = '\0';
++		if (verbose >= 3)
++			fprintf(stderr, "processing line %d: %s\n",
++				nline, line);
++
++		for (token = strtok_r(line, delims, &_token);
++		     token != NULL && *token != '#';
++		     token = strtok_r(NULL, delims, &_token)) {
++
++			if (argc >= argl) {
++				int argn = argl + ARGV_CHUNK;
++				char **tmp;
++
++				tmp = realloc(argv, argn * sizeof(*argv));
++				if (tmp == NULL)
++					break;
++				argv = tmp;
++				argl = argn;
++			}
++
++			if (argc == 1 && !strcmp(token, command))
++				continue;
++
++			argv[argc++] = token;
++		}
++
++		if (argc <= 1)
++			continue;
++
++		if (verbose >= 2) {
++			int i;
++
++			fprintf(stderr, "## file %s line %d:", batch_fn, nline);
++			for (i = 0; i < argc; i++)
++				fprintf(stderr, " %s", argv[i]);
++			fprintf(stderr, "\n");
++		}
++
++		optind = 0;
++		rv = handle_args(argc, argv, nline);
++		if (rv != MPATH_PR_SUCCESS)
++			ret = rv;
++	}
++
++	fclose(fl);
++	free(argv);
++	free(line);
++	return ret;
++}
++
++static int handle_args(int argc, char * argv[], int nline)
++{
++	int fd, c;
+ 	const char *device_name = NULL;
+ 	int num_prin_sa = 0;
+ 	int num_prout_sa = 0;
+@@ -69,45 +162,41 @@ int main (int argc, char * argv[])
+ 	int prin = 1;
+ 	int prin_sa = -1;
+ 	int prout_sa = -1;
+-	int verbose = 0;
+-	int loglevel = 0;
+-	int noisy = 0;
+ 	int num_transport =0;
++	char *batch_fn = NULL;
+ 	void *resp = NULL;
+ 	struct transportid * tmp;
+-	struct udev *udev = NULL;
+ 
+-	if (optind == argc)
+-	{
+-
+-		fprintf (stderr, "No parameter used\n");
+-		usage ();
+-		exit (1);
+-	}
+-
+-	if (getuid () != 0)
+-	{
+-		fprintf (stderr, "need to be root\n");
+-		exit (1);
+-	}
+-
+-	udev = udev_new();
+-	mpath_lib_init(udev);
+-	memset(transportids,0,MPATH_MX_TIDS);
++ 	memset(transportids, 0, MPATH_MX_TIDS * sizeof(struct transportid));
+ 
+ 	while (1)
+ 	{
+ 		int option_index = 0;
+ 
+-		c = getopt_long (argc, argv, "v:Cd:hHioZK:S:PAT:skrGILcRX:l:",
++		c = getopt_long (argc, argv, "v:Cd:hHioZK:S:PAT:skrGILcRX:l:f:",
+ 				long_options, &option_index);
+ 		if (c == -1)
+ 			break;
+ 
+ 		switch (c)
+ 		{
++			case 'f':
++				if (nline != 0) {
++					fprintf(stderr,
++						"ERROR: -f option not allowed in batch file\n");
++					ret = MPATH_PR_SYNTAX_ERROR;
++					goto out;
++				}
++				if (batch_fn != NULL) {
++					fprintf(stderr,
++						"ERROR: -f option can be used at most once\n");
++					ret = MPATH_PR_SYNTAX_ERROR;
++					goto out;
++				}
++				batch_fn = strdup(optarg);
++				break;
+ 			case 'v':
+-				if (1 != sscanf (optarg, "%d", &loglevel))
++				if (nline == 0 && 1 != sscanf (optarg, "%d", &loglevel))
+ 				{
+ 					fprintf (stderr, "bad argument to '--verbose'\n");
+ 					return MPATH_PR_SYNTAX_ERROR;
+@@ -241,8 +330,7 @@ int main (int argc, char * argv[])
+                                 break;
+ 
+ 			default:
+-				fprintf(stderr, "unrecognised switch " "code 0x%x ??\n", c);	
+-				usage ();
++				fprintf(stderr, "unrecognised switch " "code 0x%x ??\n", c);
+ 				ret = MPATH_PR_SYNTAX_ERROR;
+ 				goto out;
+ 		}
+@@ -260,27 +348,29 @@ int main (int argc, char * argv[])
+ 		{
+ 			for (; optind < argc; ++optind)
+ 				fprintf (stderr, "Unexpected extra argument: %s\n", argv[optind]);
+-			usage ();
+ 			ret = MPATH_PR_SYNTAX_ERROR;
+ 			goto out;
+ 		}
+ 	}
+ 
+-	/* set verbosity */
+-	noisy = (loglevel >= 3) ? 1 : hex;
+-	verbose	= (loglevel >= 4)? 4 : loglevel;
++	if (nline == 0) {
++		/* set verbosity */
++		noisy = (loglevel >= 3) ? 1 : hex;
++		verbose	= (loglevel >= 4)? 4 : loglevel;
++		ret = mpath_persistent_reserve_init_vecs(verbose);
++		if (ret != MPATH_PR_SUCCESS)
++			goto out;
++	}
+ 
+-	if ((prout_flag + prin_flag) == 0)
++	if ((prout_flag + prin_flag) == 0 && batch_fn == NULL)
+ 	{
+ 		fprintf (stderr, "choose either '--in' or '--out' \n");
+-		usage ();
+ 		ret = MPATH_PR_SYNTAX_ERROR;
+ 		goto out;
+ 	}
+ 	if ((prout_flag + prin_flag) > 1)
+ 	{
+ 		fprintf (stderr, "choose either '--in' or '--out' \n");
+-		usage ();
+ 		ret = MPATH_PR_SYNTAX_ERROR;
+ 		goto out;
+ 	}
+@@ -311,21 +401,19 @@ int main (int argc, char * argv[])
+ 		{
+ 			fprintf (stderr,
+ 					" No service action given for Persistent Reserve IN\n");
+-			usage();
+ 			ret = MPATH_PR_SYNTAX_ERROR;
+ 		}
+ 		else if (num_prin_sa > 1)
+ 		{
+ 			fprintf (stderr, " Too many service actions given; choose "
+ 					"one only\n");
+-			usage();
+ 			ret = MPATH_PR_SYNTAX_ERROR;
+ 		}
+ 	}
+ 	else
+ 	{
+-		usage ();
+-		ret = MPATH_PR_SYNTAX_ERROR;
++		if (batch_fn == NULL)
++			ret = MPATH_PR_SYNTAX_ERROR;
+ 		goto out;
+ 	}
+ 
+@@ -333,7 +421,6 @@ int main (int argc, char * argv[])
+ 	{
+ 		fprintf (stderr, " --relative-target-port"
+ 				" only useful with --register-move\n");
+-		usage ();
+ 		ret = MPATH_PR_SYNTAX_ERROR;
+ 		goto out;
+ 	}
+@@ -355,7 +442,6 @@ int main (int argc, char * argv[])
+ 	if (device_name == NULL)
+ 	{
+ 		fprintf (stderr, "No device name given \n");
+-		usage ();
+ 		ret = MPATH_PR_SYNTAX_ERROR;
+ 		goto out;
+ 	}
+@@ -382,7 +468,7 @@ int main (int argc, char * argv[])
+ 			goto out;
+ 		}
+ 
+-		ret = mpath_persistent_reserve_in (fd, prin_sa, resp, noisy, verbose);
++		ret = __mpath_persistent_reserve_in (fd, prin_sa, resp, noisy);
+ 		if (ret != MPATH_PR_SUCCESS )
+ 		{
+ 			fprintf (stderr, "Persistent Reserve IN command failed\n");
+@@ -442,8 +528,8 @@ int main (int argc, char * argv[])
+ 		}
+ 
+ 		/* PROUT commands other than 'register and move' */
+-		ret = mpath_persistent_reserve_out (fd, prout_sa, 0, prout_type,
+-				paramp, noisy, verbose);
++		ret = __mpath_persistent_reserve_out (fd, prout_sa, 0, prout_type,
++				paramp, noisy);
+ 		for (j = 0 ; j < num_transport; j++)
+ 		{
+ 			tmp = paramp->trnptid_list[j];
+@@ -466,17 +552,57 @@ int main (int argc, char * argv[])
+ 		printf("PR out: command failed\n");
+ 	}
+ 
+-	res = close (fd);
+-	if (res < 0)
++	close (fd);
++
++out :
++	if (ret == MPATH_PR_SYNTAX_ERROR) {
++		free(batch_fn);
++		if (nline == 0)
++			usage();
++		else
++			fprintf(stderr, "syntax error on line %d in batch file\n",
++				nline);
++	} else if (batch_fn != NULL) {
++		int rv = do_batch_file(batch_fn);
++
++		free(batch_fn);
++		ret = ret == 0 ? rv : ret;
++	}
++	if (nline == 0)
++		mpath_persistent_reserve_free_vecs();
++	return (ret >= 0) ? ret : MPATH_PR_OTHER;
++}
++
++int main(int argc, char *argv[])
++{
++	struct udev *udev;
++	int ret;
++
++	if (optind == argc)
++	{
++
++		fprintf (stderr, "No parameter used\n");
++		usage ();
++		exit (1);
++	}
++
++	if (getuid () != 0)
+ 	{
+-		mpath_lib_exit();
++		fprintf (stderr, "need to be root\n");
++		exit (1);
++	}
++
++	udev = udev_new();
++	if(mpath_lib_init(udev) != 0) {
+ 		udev_unref(udev);
+-		return MPATH_PR_FILE_ERROR;
++		exit(1);
+ 	}
+ 
+-out :
++	ret = handle_args(argc, argv, 0);
++
+ 	mpath_lib_exit();
+ 	udev_unref(udev);
++
+ 	return (ret >= 0) ? ret : MPATH_PR_OTHER;
+ }
+ 
+@@ -677,6 +803,7 @@ static void usage()
+ 			"                   4           Informational messages with trace enabled\n"
+ 			"    --clear|-C                 PR Out: Clear\n"
+ 			"    --device=DEVICE|-d DEVICE  query or change DEVICE\n"
++			"    --batch-file|-f FILE       run commands from FILE\n"
+ 			"    --help|-h                  output this usage message\n"
+ 			"    --hex|-H                   output response in hex\n"
+ 			"    --in|-i                    request PR In command \n"
+Index: multipath-tools-130222/mpathpersist/main.h
+===================================================================
+--- multipath-tools-130222.orig/mpathpersist/main.h
++++ multipath-tools-130222/mpathpersist/main.h
+@@ -2,6 +2,7 @@ static struct option long_options[] = {
+ 	{"verbose", 1, 0, 'v'},
+ 	{"clear", 0, 0, 'C'},
+ 	{"device", 1, 0, 'd'},
++	{"batch-file", 1, 0, 'f' },
+ 	{"help", 0, 0, 'h'},
+ 	{"hex", 0, 0, 'H'},
+ 	{"in", 0, 0, 'i'},
+Index: multipath-tools-130222/libmpathpersist/mpath_persist.c
+===================================================================
+--- multipath-tools-130222.orig/libmpathpersist/mpath_persist.c
++++ multipath-tools-130222/libmpathpersist/mpath_persist.c
+@@ -16,6 +16,7 @@
+ #include <config.h>
+ #include <switchgroup.h>
+ #include <discovery.h>
++#include <configure.h>
+ #include <dmparser.h>
+ #include <ctype.h>
+ #include <propsel.h>
+@@ -80,17 +81,21 @@ updatepaths (struct multipath * mpp)
+ 					pp->state = PATH_DOWN;
+ 					continue;
+ 				}
+-				pp->mpp = mpp;
+-				pathinfo(pp, conf->hwtable, DI_ALL);
+-				continue;
+ 			}
+ 			pp->mpp = mpp;
++			if (pp->udev == NULL) {
++				pp->udev = udev_device_new_from_devnum(conf->udev, 'b', parse_devt(pp->dev_t));
++				if (pp->udev == NULL) {
++					pp->state = PATH_DOWN;
++					continue;
++				}
++				pathinfo(pp, conf->hwtable,
++					 DI_SYSFS|DI_CHECKER);
++				continue;
++			}
+ 			if (pp->state == PATH_UNCHECKED ||
+ 					pp->state == PATH_WILD)
+ 				pathinfo(pp, conf->hwtable, DI_CHECKER);
+-
+-			if (pp->priority == PRIO_UNDEF)
+-				pathinfo(pp, conf->hwtable, DI_PRIO);
+ 		}
+ 	}
+ 	return 0;
+@@ -129,45 +134,44 @@ mpath_prin_activepath (struct multipath
+ 
+ int mpath_persistent_reserve_in (int fd, int rq_servact, struct prin_resp *resp, int noisy, int verbose)
+ {
+-	struct stat info;
+-	vector curmp = NULL;
+-	vector pathvec = NULL;
+-	char * alias;
+-	struct multipath * mpp;
+-	int map_present;
+-	int major, minor;
+-	int ret;
++	int ret = mpath_persistent_reserve_init_vecs(verbose);
+ 
+-	conf->verbosity = verbose;
++	if (ret != MPATH_PR_SUCCESS)
++		return ret;
++	ret = __mpath_persistent_reserve_in(fd, rq_servact, resp, noisy);
++	mpath_persistent_reserve_free_vecs();
++	return ret;
++}
+ 
+-	if (fstat( fd, &info) != 0){
+-		condlog(0, "stat error %d", fd);
+-		return MPATH_PR_FILE_ERROR;
+-	} 
+-	if(!S_ISBLK(info.st_mode)){
+-		condlog(0, "Failed to get major:minor. fd = %d", fd);
+-		return MPATH_PR_FILE_ERROR;
+-	}
++int mpath_persistent_reserve_out ( int fd, int rq_servact, int rq_scope,
++	unsigned int rq_type, struct prout_param_descriptor *paramp, int noisy, int verbose)
++{
++	int ret = mpath_persistent_reserve_init_vecs(verbose);
+ 
+-	major = (int)MAJOR(info.st_rdev);
+-	minor = (int)MINOR(info.st_rdev);	
+-	condlog(4, "Device %d:%d:  ", major, minor);
++	if (ret != MPATH_PR_SUCCESS)
++		return ret;
++	ret = __mpath_persistent_reserve_out(fd, rq_servact, rq_scope, rq_type,
++					     paramp, noisy);
++	mpath_persistent_reserve_free_vecs();
++	return ret;
++}
+ 
+-	/* get alias from major:minor*/
+-	alias = dm_mapname(major, minor);
+-	if (!alias){
+-		condlog(0, "%d:%d failed to get device alias.", major, minor);
+-		return MPATH_PR_DMMP_ERROR;
+-	}
++static vector curmp;
++static vector pathvec;
+ 
+-	condlog(3, "alias = %s", alias);
+-	map_present = dm_map_present(alias);
+-	if (map_present && !dm_is_mpath(alias)){
+-		condlog( 0, "%s: not a multipath device.", alias);
+-		ret = MPATH_PR_DMMP_ERROR;
+-		goto out;
+-	}
++void mpath_persistent_reserve_free_vecs(void)
++{
++	free_multipathvec(curmp, KEEP_PATHS);
++	free_pathvec(pathvec, FREE_PATHS);
++	curmp = pathvec = NULL;
++}
++
++int mpath_persistent_reserve_init_vecs(int verbose)
++{
++	conf->verbosity = verbose;
+ 
++	if (curmp)
++		return MPATH_PR_SUCCESS;
+ 	/*
+ 	 * allocate core vectors to store paths and multipaths
+ 	 */
+@@ -175,63 +179,32 @@ int mpath_persistent_reserve_in (int fd,
+ 	pathvec = vector_alloc ();
+ 
+ 	if (!curmp || !pathvec){
+-		condlog (0, "%s: vector allocation failed.", alias);
+-		ret = MPATH_PR_DMMP_ERROR;
+-		goto out;
+-	}
+-
+-	if (path_discovery(pathvec, conf, DI_SYSFS | DI_CHECKER) < 0) {
+-		ret = MPATH_PR_DMMP_ERROR;
+-		goto out1;
+-	}
+-
+-	/* get info of all paths from the dm device	*/
+-	if (get_mpvec (curmp, pathvec, alias)){
+-		condlog(0, "%s: failed to get device info.", alias);
+-		ret = MPATH_PR_DMMP_ERROR;
+-		goto out1;
++		condlog (0, "vector allocation failed.");
++		goto err;
+ 	}
+ 
+-	mpp = find_mp_by_alias(curmp, alias);
+-	if (!mpp){
+-		condlog(0, "%s: devmap not registered.", alias);
+-		ret = MPATH_PR_DMMP_ERROR;
+-		goto out1;
+-	}
++	if (dm_get_maps(curmp))
++		goto err;
+ 
+-	ret = mpath_prin_activepath(mpp, rq_servact, resp, noisy);
++	return MPATH_PR_SUCCESS;
+ 
+-out1:
+-	free_multipathvec(curmp, KEEP_PATHS);
+-	free_pathvec(pathvec, FREE_PATHS);	
+-out:
+-	FREE(alias);
+-	return ret; 						
++err:
++	mpath_persistent_reserve_free_vecs();
++	return MPATH_PR_DMMP_ERROR;
+ }
+ 
+-int mpath_persistent_reserve_out ( int fd, int rq_servact, int rq_scope,
+-		unsigned int rq_type, struct prout_param_descriptor *paramp, int noisy, int verbose)
++static int mpath_get_map(int fd, char **palias, struct multipath **pmpp)
+ {
+-
++	int ret = MPATH_PR_DMMP_ERROR;
+ 	struct stat info;
+-
+-	vector curmp = NULL;
+-	vector pathvec = NULL;
+-
+-	char * alias;
+-	struct multipath * mpp;
+-	int map_present;
+ 	int major, minor;
+-	int ret;
+-	uint64_t prkey;
+-
+-	conf->verbosity = verbose;
++	char *alias;
++	struct multipath *mpp;
+ 
+-	if (fstat( fd, &info) != 0){
++	if (fstat(fd, &info) != 0){
+ 		condlog(0, "stat error fd=%d", fd);
+ 		return MPATH_PR_FILE_ERROR;
+ 	}
+-
+ 	if(!S_ISBLK(info.st_mode)){
+ 		condlog(3, "Failed to get major:minor. fd=%d", fd);
+ 		return MPATH_PR_FILE_ERROR;	
+@@ -241,53 +214,72 @@ int mpath_persistent_reserve_out ( int f
+ 	minor = (int)MINOR(info.st_rdev);
+ 	condlog(4, "Device  %d:%d", major, minor);
+ 
+-	/* get WWN of the device from major:minor*/
++	/* get alias from major:minor*/
+ 	alias = dm_mapname(major, minor);
+ 	if (!alias){
++		condlog(0, "%d:%d failed to get device alias.", major, minor);
+ 		return MPATH_PR_DMMP_ERROR;
+ 	}
+ 
+ 	condlog(3, "alias = %s", alias);
+-	map_present = dm_map_present(alias);
+ 
+-	if (map_present && !dm_is_mpath(alias)){
++	if (dm_map_present(alias) && !dm_is_mpath(alias)){
+ 		condlog(3, "%s: not a multipath device.", alias);
+-		ret = MPATH_PR_DMMP_ERROR;
+-		goto out;
+-	}
+-
+-	/*
+-	 * allocate core vectors to store paths and multipaths
+-	 */
+-	curmp = vector_alloc ();
+-	pathvec = vector_alloc ();
+-
+-	if (!curmp || !pathvec){
+-		condlog (0, "%s: vector allocation failed.", alias);
+-		ret = MPATH_PR_DMMP_ERROR;
+ 		goto out;
+ 	}
+ 
+-	if (path_discovery(pathvec, conf, DI_SYSFS | DI_CHECKER) < 0) {
+-		ret = MPATH_PR_DMMP_ERROR;
+-		goto out1;
+-	}
+-
+ 	/* get info of all paths from the dm device     */
+ 	if (get_mpvec(curmp, pathvec, alias)){
+ 		condlog(0, "%s: failed to get device info.", alias);
+-		ret = MPATH_PR_DMMP_ERROR;
+-		goto out1;
++		goto out;
+ 	}
+ 
+ 	mpp = find_mp_by_alias(curmp, alias);
+ 
+ 	if (!mpp) {
+ 		condlog(0, "%s: devmap not registered.", alias);
+-		ret = MPATH_PR_DMMP_ERROR;
+-		goto out1;
++		goto out;
+ 	}
+ 
++	ret = MPATH_PR_SUCCESS;
++	if (pmpp)
++		*pmpp = mpp;
++	if (palias) {
++		*palias = alias;
++		alias = NULL;
++	}
++out:
++	FREE(alias);
++	return ret;
++}
++
++int __mpath_persistent_reserve_in (int fd, int rq_servact,
++	struct prin_resp *resp, int noisy)
++{
++	struct multipath *mpp;
++	int ret;
++
++	ret = mpath_get_map(fd, NULL, &mpp);
++	if (ret != MPATH_PR_SUCCESS)
++		return ret;
++
++	ret = mpath_prin_activepath(mpp, rq_servact, resp, noisy);
++
++	return ret;
++}
++
++int __mpath_persistent_reserve_out ( int fd, int rq_servact, int rq_scope,
++	unsigned int rq_type, struct prout_param_descriptor *paramp, int noisy)
++{
++	struct multipath *mpp;
++	char *alias;
++	int ret;
++	uint64_t prkey;
++
++	ret = mpath_get_map(fd, &alias, &mpp);
++	if (ret != MPATH_PR_SUCCESS)
++		return ret;
++
+ 	select_reservation_key(mpp);
+ 	select_all_tg_pt(mpp);
+ 
+@@ -350,10 +342,6 @@ int mpath_persistent_reserve_out ( int f
+ 		}
+ 	}
+ out1:
+-	free_multipathvec(curmp, KEEP_PATHS);
+-	free_pathvec(pathvec, FREE_PATHS);
+-
+-out:
+ 	FREE(alias);
+ 	return ret; 
+ }
+@@ -365,21 +353,22 @@ get_mpvec (vector curmp, vector pathvec,
+ 	struct multipath *mpp;
+ 	char params[PARAMS_SIZE], status[PARAMS_SIZE];
+ 
+-	if (dm_get_maps (curmp)){
+-		return 1;
+-	}
+-
+ 	vector_foreach_slot (curmp, mpp, i){
+ 		/*
+ 		 * discard out of scope maps
+ 		 */
+-		if (mpp->alias && refwwid && strncmp (mpp->alias, refwwid, WWID_SIZE)){
+-			free_multipath (mpp, KEEP_PATHS);
+-			vector_del_slot (curmp, i);
+-			i--;
++		if (!mpp->alias) {
++			condlog(0, "%s: map with empty alias!", __func__);
+ 			continue;
+ 		}
+ 
++		if (mpp->pg != NULL)
++			/* Already seen this one */
++			continue;
++
++		if (refwwid && strncmp (mpp->alias, refwwid, WWID_SIZE - 1))
++			continue;
++
+ 		dm_get_map(mpp->alias, &mpp->size, params);
+ 		condlog(3, "params = %s", params);
+ 		dm_get_status(mpp->alias, status);
+@@ -392,7 +381,6 @@ get_mpvec (vector curmp, vector pathvec,
+ 		 * about them
+ 		 */
+ 		updatepaths(mpp);
+-		mpp->bestpg = select_path_group (mpp);
+ 		disassemble_status (status, mpp);
+ 
+ 	}
+Index: multipath-tools-130222/libmpathpersist/mpath_persist.h
+===================================================================
+--- multipath-tools-130222.orig/libmpathpersist/mpath_persist.h
++++ multipath-tools-130222/libmpathpersist/mpath_persist.h
+@@ -212,6 +212,15 @@ extern int mpath_persistent_reserve_in (
+ 
+ /*
+  * DESCRIPTION :
++ * This function is like mpath_persistent_reserve_in(), except that it doesn't call
++ * mpath_persistent_reserve_init_vecs() and mpath_persistent_reserve_free_vecs()
++ * before and after the actual PR call.
++ */
++extern int __mpath_persistent_reserve_in(int fd, int rq_servact,
++		struct prin_resp *resp, int noisy);
++
++/*
++ * DESCRIPTION :
+  * This function sends PROUT command to the DM device and get the response.
+  *
+  * @fd: The file descriptor of a multipath device. Input argument.
+@@ -235,6 +244,37 @@ extern int mpath_persistent_reserve_in (
+ extern int mpath_persistent_reserve_out ( int fd, int rq_servact, int rq_scope,
+ 		unsigned int rq_type, struct prout_param_descriptor *paramp, int noisy,
+ 		int verbose);
++/*
++ * DESCRIPTION :
++ * This function is like mpath_persistent_reserve_out(), except that it doesn't call
++ * mpath_persistent_reserve_init_vecs() and mpath_persistent_reserve_free_vecs()
++ * before and after the actual PR call.
++ */
++extern int __mpath_persistent_reserve_out( int fd, int rq_servact, int rq_scope,
++		unsigned int rq_type, struct prout_param_descriptor *paramp,
++		int noisy);
++
++/*
++ * DESCRIPTION :
++ * This function allocates data structures and performs basic initialization and
++ * device discovery for later calls of __mpath_persistent_reserve_in() or
++ * __mpath_persistent_reserve_out().
++ * @verbose: Set verbosity level. Input argument. value:0 to 3. 0->disabled, 3->Max verbose
++ *
++ * RESTRICTIONS:
++ *
++ * RETURNS: MPATH_PR_SUCCESS if successful else returns any of the status specified
++ *       above in RETURN_STATUS.
++ */
++int mpath_persistent_reserve_init_vecs(int verbose);
++
++/*
++ * DESCRIPTION :
++ * This function frees data structures allocated by
++ * mpath_persistent_reserve_init_vecs().
++ */
++void mpath_persistent_reserve_free_vecs(void);
++
+ 
+ #ifdef __cplusplus
+ }
+Index: multipath-tools-130222/mpathpersist/mpathpersist.8
+===================================================================
+--- multipath-tools-130222.orig/mpathpersist/mpathpersist.8
++++ multipath-tools-130222/mpathpersist/mpathpersist.8
+@@ -1,99 +1,296 @@
+-.\" DO NOT MODIFY THIS FILE!  It was generated by help2man 1.39.2.
+-.TH MPATHPERSIST  "8" "April 2011" "mpathpersist" "User Commands"
++.\" ----------------------------------------------------------------------------
++.\" Update the date below if you make any significant change.
++.\" Make sure there are no errors with:
++.\" groff -z -wall -b -e -t mpathpersist/mpathpersist.8
++.\"
++.\" ----------------------------------------------------------------------------
++.
++.TH MPATHPERSIST 8 2019-05-27 "Linux"
++.
++.
++.\" ----------------------------------------------------------------------------
+ .SH NAME
+-mpathpersist
++.\" ----------------------------------------------------------------------------
++.
++mpathpersist \- Manages SCSI persistent reservations on dm multipath devices.
++.
++.
++.\" ----------------------------------------------------------------------------
+ .SH SYNOPSIS
++.\" ----------------------------------------------------------------------------
++.
+ .B mpathpersist
+-[\fIOPTIONS\fR] [\fIDEVICE\fR]
++.RB [\| OPTIONS \|]
++.I device
++.
++.
++.\" ----------------------------------------------------------------------------
+ .SH DESCRIPTION
+-.IP
+-Options:
+-.TP
+-\fB\-\-verbose\fR|\-v level
+-verbosity level
+-.TP
+-0
+-Critical and error messages
+-.TP
+-1
+-Warning messages
+-.TP
+-2
+-Informational messages
+-.TP
+-3
+-Informational messages with trace enabled
+-.TP
+-\fB\-\-clear\fR|\-C
+-PR Out: Clear
+-.TP
+-\fB\-\-device\fR=\fIDEVICE\fR|\-d DEVICE
+-query or change DEVICE
+-.TP
+-\fB\-\-help\fR|\-h
+-output this usage message
+-.TP
+-\fB\-\-hex\fR|\-H
+-output response in hex
+-.TP
+-\fB\-\-in\fR|\-i
+-request PR In command
+-.TP
+-\fB\-\-out\fR|\-o
+-request PR Out command
+-.TP
+-\fB\-\-param\-aptpl\fR|\-Z
+-PR Out parameter 'APTPL'
+-.TP
+-\fB\-\-read\-keys\fR|\-k
+-PR In: Read Keys
+-.TP
+-\fB\-\-param\-rk\fR=\fIRK\fR|\-K RK
+-PR Out parameter reservation key (RK is in hex)
+-.TP
+-\fB\-\-param\-sark\fR=\fISARK\fR|\-S SARK
+-PR Out parameter service action
+-reservation key (SARK is in hex)
+-.TP
+-\fB\-\-preempt\fR|\-P
+-PR Out: Preempt
+-.TP
+-\fB\-\-preempt\-abort\fR|\-A
+-PR Out: Preempt and Abort
+-.TP
+-\fB\-\-prout\-type\fR=\fITYPE\fR|\-T TYPE
+-PR Out command type
+-.TP
+-\fB\-\-read\-status\fR|\-s
+-PR In: Read Full Status
+-.TP
+-\fB\-\-read\-keys\fR|\-k
+-PR In: Read Keys
+-.TP
+-\fB\-\-read\-reservation\fR|\-r
+-PR In: Read Reservation
+-.TP
+-\fB\-\-register\fR|\-G
+-PR Out: Register
+-.TP
+-\fB\-\-register\-ignore\fR|\-I
+-PR Out: Register and Ignore
+-.TP
+-\fB\-\-release\fR|\-L
+-PR Out: Release
+-.TP
+-\fB\-\-report\-capabilities\fR|\-c
+-PR In: Report Capabilities
+-.TP
+-\fB\-\-reserve\fR|\-R
+-PR Out: Reserve
+-.TP
+-\fB\-\-transport\-id\fR=\fITIDS\fR|\-X TIDS
+-TransportIDs can be mentioned
+-in several forms
+-.IP
+-Examples:
+-.IP
+-mpathpersist \fB\-\-out\fR \fB\-\-register\fR \fB\-\-param\-sark\fR=\fI123abc\fR \fB\-\-prout\-type\fR=\fI5\fR /dev/mapper/mpath9
+-mpathpersist \fB\-i\fR \fB\-k\fR /dev/mapper/mpath9
++.\" ----------------------------------------------------------------------------
++.
++This utility is used to manage SCSI persistent reservations on Device Mapper
++Multipath devices. To be able to use this functionality, the \fIreservation_key\fR
++attribute must be defined in the \fI/etc/multipath.conf\fR file. Otherwise the
++\fBmultipathd\fR daemon will not check for persistent reservation for newly
++discovered paths or reinstated paths.
++.
++.LP
++\fBmpathpersist\fR supports the same command-line options as the
++\fBsg_persist\fR utility.
++.
++Consult the \fBsg_persist (8)\fR manual page for an in-depth discussion of the
++various options.
++.
++.\" ----------------------------------------------------------------------------
++.SH OPTIONS
++.\" ----------------------------------------------------------------------------
++.
++.TP
++.BI \-verbose|\-v " level"
++Verbosity:
++.RS
++.TP 5
++.I 0
++Critical messages.
++.TP
++.I 1
++Error messages.
++.TP
++.I 2
++Warning messages.
++.TP
++.I 3
++Informational messages.
++.TP
++.I 4
++Informational messages with trace enabled.
++.RE
++.
++.TP
++.BI \--device=\fIDEVICE\fB|\-d " DEVICE"
++Query or change DEVICE.
++.
++.TP
++.BI \--batch-file=\fIDEVICE\fB|\-f " FILE"
++Read commands from \fIFILE\fR. See section \(dqBATCH FILES\(dq below. This
++option can be given at most once.
++.
++.TP
++.B \--help|\-h
++Output this usage message.
++.
++.TP
++.B \--hex|\-H
++Output response in hex.
++.
++.TP
++.B \--in|\-i
++Request PR In command.
++.
++.TP
++.B \--out|\-o
++Request PR Out command.
++.
++.TP
++.B \--param-aptpl|\-Z
++PR Out parameter 'APTPL'.
++.
++.TP
++.B \--read-keys|\-k
++PR In: Read Keys.
++.
++.TP
++.BI \--param-rk=\fIRK\fB|\-K " RK"
++PR Out parameter reservation key (RK is in hex, up to 8 bytes).
++.
++.TP
++.BI \--param-sark=\fISARK\fB|\-S " SARK"
++PR Out parameter service action reservation key (SARK is in hex).
++.
++.TP
++.B \--preempt|\-P
++PR Out: Preempt.
++.
++.TP
++.B \--clear|\-C
++PR Out: Clear registrations.
++.
++.TP
++.B \--preempt-abort|\-A
++PR Out: Preempt and Abort.
++.
++.TP
++.BI \--prout-type=\fITYPE\fB|\-T " TYPE"
++PR Out command type.
++.
++.TP
++.B \--read-full-status|\-s
++PR In: Read Full Status.
++.
++.TP
++.B \--read-keys|\-k
++PR In: Read Keys.
++.
++.TP
++.B \--read-reservation|\-r
++PR In: Read Reservation.
++.
++.TP
++.B \--register|\-G
++PR Out: Register.
++.
++.TP
++.B \--register-ignore|\-I
++PR Out: Register and Ignore.
++.
++.TP
++.B \--release|\-L
++PR Out: Release.
++.
++.TP
++.B \--report-capabilities|\-c
++PR In: Report Capabilities.
++.
++.TP
++.B \--reserve|\-R
++PR Out: Reserve.
++.
++.TP
++.BI \--transport-id=\fITIDS\fB|\-X " TIDS"
++TransportIDs can be mentioned in several forms.
++.
++.TP
++.BI \--alloc-length=\fILEN\fB|\-l " LEN"
++PR In: maximum allocation length. LEN is a decimal number between 0 and 8192.
++.
++.
++.\" ----------------------------------------------------------------------------
++.SH EXAMPLE
++.\" ----------------------------------------------------------------------------
++.
++.PP
++Register the key \(dq123abc\(dq for the /dev/mapper/mpath9 device:
++.RS
++\fBmpathpersist --out --register --param-sark=\fI123abc /dev/mapper/mpath9\fR
++.RE
++.PP
++Read registered reservation keys for the /dev/mapper/mpath9 device:
++.RS
++\fBmpathpersist -i -k \fI/dev/mapper/mpath9\fR
++.RE
++.PP
++Create a reservation for the /dev/mapper/mpath9 device with the given
++reservation key:
++.RS
++\fBmpathpersist --out --reserve --param-rk=\fI123abc \fB--prout-type=\fI8 \fB-d \fI/dev/mapper/mpath9\fR
++.RE
++.PP
++Read the reservation status of the /dev/mapper/mpath9 device:
++.RS
++\fBmpathpersist -i -s -d \fI/dev/mapper/mpath9\fR
++.RE
++.PP
++Release the previously created reservation (note that the prout-type needs to
++be the same as above):
++.RS
++\fBmpathpersist --out --release --param-rk=\fI123abc \fB--prout-type=\fI8 \fB-d \fI/dev/mapper/mpath9\fR
++.RE
++.PP
++Remove the current key registered for this host (i.e. reset it to 0):
++.RS
++\fBmpathpersist --out --register-ignore -K \fI123abc\fB -S \fI0\fB \fI/dev/mapper/mpath9\fR
++.RE
++.PP
++Remove current reservation, and unregister all registered keys from all I_T nexuses:
++.RS
++\fBmpathpersist -oCK \fI123abc \fI/dev/mapper/mpath9\fR
++.RE
++.
++.
++.\" ----------------------------------------------------------------------------
++.SH BATCH FILES
++.\" ----------------------------------------------------------------------------
++.
++.PP
++The option \fI--batch-file\fR (\fI-f\fR) sets an input file to be processed
++by \fBmpathpersist\fR. Grouping commands in batch files can provide a speed
++improvement in particular on large installments, because \fBmpathpersist\fR
++needs to scan existing paths and maps only once during startup.
++.
++.PP
++The input file is a text file that is parsed
++line by line. Every line of the file is interpreted as a command line
++(i.e. list of options and parameters) for \fBmpathpersist\fR. Options
++and parameters are separated by one or more whitespace characters (space or TAB).
++Lines can, but do not have to, begin with the word \(dqmpathpersist\(dq.
++The \(dq#\(dq character, either at the beginning of the line or following
++some whitespace, denotes the start of a comment that lasts until the end of the
++line. Empty lines are allowed. Continuation of mpathpersist commands over
++multiple lines is not supported.
++.
++.PP
++All options listed in this man page, except \fI-f\fR and
++\fI-v\fR, are allowed in batch files. Both short and long option formats may be used.
++Using the  \fI-f\fR option inside the batch file is an error. The \fI-v\fR
++option is ignored in batch files.
++.
++.PP
++The multipath map on which to act must be specified on every input line, e.g. using the \fI-d\fR option.
++Commands acting on different multipath maps may be combined in a
++batch file, and multiple commands may act on the same multipath
++map. Commands are executed one by one, so
++that commands further down in the file see status changes caused by previous
++commands.
++If \fBmpathpersist\fR encounters an error while processing a line in the
++batch file, batch file processing is \fBnot\fR aborted; subsequent commands
++are executed nonetheless. The exit status of \fBmpathpersist\fR is the status
++of the first failed command, or 0 if all commands succeeded.
++.
++.PP
++If other options and parameters are used along with
++\fI-f\fR on the \fBmpathpersist\fR command line, the command line will be executed first, followed
++by the commands from the the batch file.
++.
++.PP
++Below is an example of a valid batch input file.
++.
+ .PP
++.RS
++.EX
++# This is an mpathpersist input file.
++# Short and long forms of the same command
++-i -k /dev/dm-1 # short form, this comment is ignored
++mpathpersist --in --read-keys --device=/dev/dm-1
++
++# Mixing of long and short options, variable white space
++  --out  --register    -S  abcde     /dev/dm-1
++
++# Mixing of commands for different maps
++-ir /dev/dm-0
++-ir /dev/dm-1
++
++mpathpersist --out --param-rk abcde --reserve --prout-type 5 /dev/dm-1
++# This should now show a reservation
++-ir /dev/dm-1
++-oCK abcde /dev/dm-1
++--in --read-reservation /dev/dm-1
++.EE
++.RE
++.
++.
++.\" ----------------------------------------------------------------------------
++.SH "SEE ALSO"
++.\" ----------------------------------------------------------------------------
++.
++.BR multipath (8),
++.BR multipathd (8),
++.BR sg_persist (8).
++.
++.
++.\" ----------------------------------------------------------------------------
++.SH AUTHORS
++.\" ----------------------------------------------------------------------------
++.
++\fImultipath-tools\fR was developed by Christophe Varoqui <christophe.varoqui@opensvc.com>
++and others.
++.\" EOF

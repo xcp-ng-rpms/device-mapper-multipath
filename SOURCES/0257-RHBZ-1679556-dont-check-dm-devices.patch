@@ -1,0 +1,16 @@
+---
+ multipath/multipath.rules |    1 +
+ 1 file changed, 1 insertion(+)
+
+Index: multipath-tools-130222/multipath/multipath.rules
+===================================================================
+--- multipath-tools-130222.orig/multipath/multipath.rules
++++ multipath-tools-130222/multipath/multipath.rules
+@@ -15,6 +15,7 @@ LABEL="test_dev"
+ ENV{MPATH_SBIN_PATH}="/sbin"
+ TEST!="$env{MPATH_SBIN_PATH}/multipath", ENV{MPATH_SBIN_PATH}="/usr/sbin"
+ TEST!="/etc/multipath.conf", GOTO="check_kpartx"
++KERNEL=="dm-*", GOTO="check_kpartx"
+ 
+ ACTION=="add", ENV{DM_MULTIPATH_DEVICE_PATH}!="1", \
+ 	PROGRAM=="$env{MPATH_SBIN_PATH}/multipath -c $tempnode", \

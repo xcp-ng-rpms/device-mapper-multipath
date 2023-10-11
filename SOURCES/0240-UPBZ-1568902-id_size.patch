@@ -1,0 +1,82 @@
+---
+ libmultipath/discovery.c |   12 ++++++------
+ libmultipath/structs.h   |   11 +++++++++--
+ 2 files changed, 15 insertions(+), 8 deletions(-)
+
+Index: multipath-tools-130222/libmultipath/discovery.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/discovery.c
++++ multipath-tools-130222/libmultipath/discovery.c
+@@ -845,12 +845,12 @@ scsi_sysfs_pathinfo (struct path * pp)
+ 
+ 	condlog(3, "%s: vendor = %s", pp->dev, pp->vendor_id);
+ 
+-	if (sysfs_get_model(parent, pp->product_id, SCSI_PRODUCT_SIZE))
++	if (sysfs_get_model(parent, pp->product_id, PATH_PRODUCT_SIZE))
+ 		return 1;
+ 
+ 	condlog(3, "%s: product = %s", pp->dev, pp->product_id);
+ 
+-	if (sysfs_get_rev(parent, pp->rev, SCSI_REV_SIZE))
++	if (sysfs_get_rev(parent, pp->rev, PATH_REV_SIZE))
+ 		return 1;
+ 
+ 	condlog(3, "%s: rev = %s", pp->dev, pp->rev);
+@@ -904,11 +904,11 @@ nvme_sysfs_pathinfo (struct path * pp)
+ 		return 1;
+ 
+ 	snprintf(pp->vendor_id, SCSI_VENDOR_SIZE, "NVME");
+-	snprintf(pp->product_id, SCSI_PRODUCT_SIZE, "%s",
++	snprintf(pp->product_id, PATH_PRODUCT_SIZE, "%s",
+ 		 udev_device_get_sysattr_value(parent, "model"));
+ 	snprintf(pp->serial, SERIAL_SIZE, "%s",
+ 		 udev_device_get_sysattr_value(parent, "serial"));
+-	snprintf(pp->rev, SCSI_REV_SIZE, "%s",
++	snprintf(pp->rev, PATH_REV_SIZE, "%s",
+ 		 udev_device_get_sysattr_value(parent, "firmware_rev"));
+ 
+ 	condlog(3, "%s: vendor = %s", pp->dev, pp->vendor_id);
+@@ -1022,12 +1022,12 @@ cciss_sysfs_pathinfo (struct path * pp)
+ 
+ 	condlog(3, "%s: vendor = %s", pp->dev, pp->vendor_id);
+ 
+-	if (sysfs_get_model(parent, pp->product_id, SCSI_PRODUCT_SIZE))
++	if (sysfs_get_model(parent, pp->product_id, PATH_PRODUCT_SIZE))
+ 		return 1;
+ 
+ 	condlog(3, "%s: product = %s", pp->dev, pp->product_id);
+ 
+-	if (sysfs_get_rev(parent, pp->rev, SCSI_REV_SIZE))
++	if (sysfs_get_rev(parent, pp->rev, PATH_REV_SIZE))
+ 		return 1;
+ 
+ 	condlog(3, "%s: rev = %s", pp->dev, pp->rev);
+Index: multipath-tools-130222/libmultipath/structs.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/structs.h
++++ multipath-tools-130222/libmultipath/structs.h
+@@ -24,6 +24,13 @@
+ #define SCSI_PRODUCT_SIZE	17
+ #define SCSI_REV_SIZE		5
+ #define SCSI_STATE_SIZE		19
++#define NVME_MODEL_SIZE		41
++#define NVME_REV_SIZE		9
++
++/* This must be the maximum of SCSI and NVME sizes */
++#define PATH_PRODUCT_SIZE NVME_MODEL_SIZE
++#define PATH_REV_SIZE NVME_REV_SIZE
++
+ 
+ #define NO_PATH_RETRY_UNDEF	0
+ #define NO_PATH_RETRY_FAIL	-1
+@@ -212,8 +219,8 @@ struct path {
+ 	struct hd_geometry geom;
+ 	char wwid[WWID_SIZE];
+ 	char vendor_id[SCSI_VENDOR_SIZE];
+-	char product_id[SCSI_PRODUCT_SIZE];
+-	char rev[SCSI_REV_SIZE];
++	char product_id[PATH_PRODUCT_SIZE];
++	char rev[PATH_REV_SIZE];
+ 	char serial[SERIAL_SIZE];
+ 	char tgt_node_name[NODE_NAME_SIZE];
+ 	unsigned long long size;

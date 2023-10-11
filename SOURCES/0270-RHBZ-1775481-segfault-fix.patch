@@ -1,0 +1,51 @@
+---
+ kpartx/devmapper.c       |    3 ++-
+ libmultipath/devmapper.c |    7 ++++++-
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+
+Index: multipath-tools-130222/kpartx/devmapper.c
+===================================================================
+--- multipath-tools-130222.orig/kpartx/devmapper.c
++++ multipath-tools-130222/kpartx/devmapper.c
+@@ -330,7 +330,8 @@ dm_get_map(int major, int minor, char *
+ 	next = dm_get_next_target(dmt, next, &start, &length,
+ 				  &target_type, &params);
+ 
+-	if (snprintf(outparams, PARAMS_SIZE, "%s", params) <= PARAMS_SIZE)
++	if (params &&
++	    snprintf(outparams, PARAMS_SIZE, "%s", params) <= PARAMS_SIZE)
+ 		r = 0;
+ out:
+ 	dm_task_destroy(dmt);
+Index: multipath-tools-130222/libmultipath/devmapper.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/devmapper.c
++++ multipath-tools-130222/libmultipath/devmapper.c
+@@ -461,6 +461,8 @@ dm_get_map(const char * name, unsigned l
+ 	/* Fetch 1st target */
+ 	next = dm_get_next_target(dmt, next, &start, &length,
+ 				  &target_type, &params);
++	if (!params)
++		goto out;
+ 
+ 	if (size)
+ 		*size = length;
+@@ -564,7 +566,8 @@ dm_get_status(char * name, char * outsta
+ 	next = dm_get_next_target(dmt, next, &start, &length,
+ 				  &target_type, &status);
+ 
+-	if (snprintf(outstatus, PARAMS_SIZE, "%s", status) <= PARAMS_SIZE)
++	if (status &&
++	    snprintf(outstatus, PARAMS_SIZE, "%s", status) <= PARAMS_SIZE)
+ 		r = 0;
+ out:
+ 	if (r)
+@@ -1525,6 +1528,8 @@ int dm_reassign_table(const char *name,
+ 	do {
+ 		next = dm_get_next_target(dmt, next, &start, &length,
+ 					  &target, &params);
++		if (!params || !target)
++			continue;
+ 		memset(buff, 0, PARAMS_SIZE);
+ 		strcpy(buff, params);
+ 		if (strcmp(target, TGT_MPATH) && strstr(params, old)) {

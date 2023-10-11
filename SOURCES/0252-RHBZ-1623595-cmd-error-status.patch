@@ -1,0 +1,85 @@
+---
+ multipathd/main.c   |    6 ++----
+ multipathd/uxclnt.c |   22 +++++++++++++---------
+ 2 files changed, 15 insertions(+), 13 deletions(-)
+
+Index: multipath-tools-130222/multipathd/main.c
+===================================================================
+--- multipath-tools-130222.orig/multipathd/main.c
++++ multipath-tools-130222/multipathd/main.c
+@@ -2234,8 +2234,7 @@ main (int argc, char *argv[])
+ 			conf->verbosity = atoi(optarg);
+ 			break;
+ 		case 'k':
+-			uxclnt(optarg);
+-			exit(0);
++			return(uxclnt(optarg));
+ 		case 'B':
+ 			conf->bindings_read_only = 1;
+ 			break;
+@@ -2256,8 +2255,7 @@ main (int argc, char *argv[])
+ 			optind++;
+ 		}
+ 		c += snprintf(c, s + CMDSIZE - c, "\n");
+-		uxclnt(s);
+-		exit(0);
++		return(uxclnt(s));
+ 	}
+ 
+ 	if (!logsink)
+Index: multipath-tools-130222/multipathd/uxclnt.c
+===================================================================
+--- multipath-tools-130222.orig/multipathd/uxclnt.c
++++ multipath-tools-130222/multipathd/uxclnt.c
+@@ -74,20 +74,24 @@ static void process(int fd)
+ 	}
+ }
+ 
+-static void process_req(int fd, char * inbuf)
++static int process_req(int fd, char * inbuf)
+ {
+ 	char *reply;
++	int ret;
+ 
+ 	if (send_packet(fd, inbuf) != 0) {
+ 		printf("cannot send packet\n");
+-		return;
++		return 1;
+ 	}
+-	if (recv_packet(fd, &reply) != 0)
++	if (recv_packet(fd, &reply) != 0) {
+ 		printf("error receiving packet\n");
+-	else {
+-		printf("%s", reply);
+-		FREE(reply);
++		return 1;
+ 	}
++	printf("%s", reply);
++	ret = (strcmp(reply, "fail\n") == 0);
++	FREE(reply);
++	/* Need to do better about getting return value */
++	return ret;
+ }
+ 
+ /*
+@@ -95,7 +99,7 @@ static void process_req(int fd, char * i
+  */
+ int uxclnt(char * inbuf)
+ {
+-	int fd;
++	int fd, ret = 0;
+ 
+ 	fd = mpath_connect();
+ 	if (fd == -1) {
+@@ -104,9 +108,9 @@ int uxclnt(char * inbuf)
+ 	}
+ 
+ 	if (inbuf)
+-		process_req(fd, inbuf);
++		ret = process_req(fd, inbuf);
+ 	else
+ 		process(fd);
+ 
+-	return 0;
++	return ret;
+ }
