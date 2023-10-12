@@ -1,0 +1,36 @@
+---
+ multipath/mpathconf.8 |   14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+Index: multipath-tools-130222/multipath/mpathconf.8
+===================================================================
+--- multipath-tools-130222.orig/multipath/mpathconf.8
++++ multipath-tools-130222/multipath/mpathconf.8
+@@ -61,6 +61,16 @@ Adds a line that blacklists all device n
+ .B /etc/multipath.conf
+ blacklist section. If no blacklist section exists, it will create one.
+ .TP
++.B --allow \fB<device>\fP
++Modifies the \fB/etc/multipath/conf\fP blacklist to blacklist all
++wwids and the blacklist_exceptions to whitelist \fB<device>\fP. \fB<device>\fP
++can be in the form of MAJOR:MINOR, a wwid, or the name of a device-mapper
++device, either a multipath device, or any device on stacked on top of one or
++more multipath devices. This command can be used multiple times to allow
++multiple devices.  \fBNOTE:\fP This action will create a configuration file that
++mpathconf will not be able to revert back to its previous state. Because
++of this, \fB--outfile\fP is required when using \fB--allow\fP.
++.TP
+ .B --user_friendly_name \fP { \fBy\fP | \fBn\fP }
+ If set to \fBy\fP, this adds the line
+ .B user_friendly_names yes
+@@ -76,6 +86,10 @@ to the
+ .B /etc/multipath.conf
+ defaults section. If set to \fBn\fP, this removes the line, if present. This
+ command can be used aldong with any other command.
++.TP
++.B --outfile \fB<filename>\fP
++Write the resulting multipath configuration to \fB<filename>\fP instead of
++\fB/etc/multipath.conf\fP.
+ .SH OPTIONS
+ .TP
+ .B --with_module\fP { \fBy\fP | \fBn\fP }

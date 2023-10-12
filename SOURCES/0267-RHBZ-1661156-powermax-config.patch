@@ -1,0 +1,23 @@
+---
+ libmultipath/hwtable.c |    8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+Index: multipath-tools-130222/libmultipath/hwtable.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/hwtable.c
++++ multipath-tools-130222/libmultipath/hwtable.c
+@@ -1194,6 +1194,14 @@ static struct hwentry default_hw[] = {
+ 		.detect_prio   = DETECT_PRIO_ON,
+ 		.checker_name  = NONE,
+ 	},
++	{
++		.vendor        = "NVME",
++		.product       = "^EMC PowerMax_",
++		.uid_attribute = "ID_WWN",
++		.pgpolicy      = MULTIBUS,
++		.checker_name  = NONE,
++		.prio_name     = DEFAULT_PRIO,
++	},
+ 	/*
+ 	 * EOL
+ 	 */

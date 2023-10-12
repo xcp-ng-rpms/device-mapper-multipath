@@ -1,0 +1,219 @@
+---
+ libmultipath/checkers.c              |   29 +++++++++++++++++++++++++++--
+ libmultipath/checkers.h              |    2 ++
+ libmultipath/checkers/cciss_tur.c    |    5 +++++
+ libmultipath/checkers/directio.c     |    5 +++++
+ libmultipath/checkers/emc_clariion.c |    7 +++++++
+ libmultipath/checkers/hp_sw.c        |    5 +++++
+ libmultipath/checkers/rdac.c         |    5 +++++
+ libmultipath/checkers/readsector0.c  |    5 +++++
+ libmultipath/checkers/tur.c          |    5 +++++
+ libmultipath/discovery.c             |    2 ++
+ 10 files changed, 68 insertions(+), 2 deletions(-)
+
+Index: multipath-tools-130222/libmultipath/checkers.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/checkers.c
++++ multipath-tools-130222/libmultipath/checkers.c
+@@ -132,6 +132,13 @@ struct checker * add_checker (char * nam
+ 	if (!c->init)
+ 		goto out;
+ 
++	c->mp_init = (int (*)(struct checker *)) dlsym(c->handle, "libcheck_mp_init");
++	errstr = dlerror();
++	if (errstr != NULL)
++		condlog(0, "A dynamic linking error occurred: (%s)", errstr);
++	if (!c->mp_init)
++		goto out;
++
+ 	c->free = (void (*)(struct checker *)) dlsym(c->handle, "libcheck_free");
+ 	errstr = dlerror();
+ 	if (errstr != NULL)
+@@ -189,8 +196,25 @@ int checker_init (struct checker * c, vo
+ 	if (!c)
+ 		return 1;
+ 	c->mpcontext = mpctxt_addr;
+-	if (c->init)
+-		return c->init(c);
++	if (c->init && c->init(c) != 0)
++		return 1;
++	if (mpctxt_addr && *mpctxt_addr == NULL && c->mp_init &&
++	    c->mp_init(c) != 0) /* for now, continue even if mp_init fails */
++		c->mpcontext = NULL;
++	return 0;
++}
++
++int checker_mp_init(struct checker * c, void ** mpctxt_addr)
++{
++	if (!c)
++		return 1;
++	if (c->mp_init && !c->mpcontext && mpctxt_addr) {
++		c->mpcontext = mpctxt_addr;
++		if (c->mp_init(c) != 0) {
++			c->mpcontext = NULL;
++			return 1;
++		}
++	}
+ 	return 0;
+ }
+ 
+@@ -277,6 +301,7 @@ void checker_get (struct checker * dst,
+ 	strncpy(dst->message, src->message, CHECKER_MSG_LEN);
+ 	dst->check = src->check;
+ 	dst->init = src->init;
++	dst->mp_init = src->mp_init;
+ 	dst->free = src->free;
+ 	dst->handle = NULL;
+ 	src->refcount++;
+Index: multipath-tools-130222/libmultipath/checkers.h
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/checkers.h
++++ multipath-tools-130222/libmultipath/checkers.h
+@@ -107,6 +107,7 @@ struct checker {
+ 						you want to stuff data in. */
+ 	int (*check)(struct checker *);
+ 	int (*init)(struct checker *);       /* to allocate the context */
++	int (*mp_init)(struct checker *);    /* to allocate the mpcontext */
+ 	void (*free)(struct checker *);      /* to free the context */
+ };
+ 
+@@ -118,6 +119,7 @@ void cleanup_checkers (void);
+ struct checker * add_checker (char *);
+ struct checker * checker_lookup (char *);
+ int checker_init (struct checker *, void **);
++int checker_mp_init (struct checker *, void **);
+ void checker_put (struct checker *);
+ void checker_reset (struct checker *);
+ void checker_set_sync (struct checker *);
+Index: multipath-tools-130222/libmultipath/discovery.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/discovery.c
++++ multipath-tools-130222/libmultipath/discovery.c
+@@ -1217,6 +1217,8 @@ get_state (struct path * pp, int daemon,
+ 			return PATH_UNCHECKED;
+ 		}
+ 	}
++	if (pp->mpp && !c->mpcontext)
++		checker_mp_init(c, &pp->mpp->mpcontext);
+ 	checker_clear_message(c);
+ 	if (daemon) {
+ 		if (conf->force_sync == 0)
+Index: multipath-tools-130222/libmultipath/checkers/cciss_tur.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/checkers/cciss_tur.c
++++ multipath-tools-130222/libmultipath/checkers/cciss_tur.c
+@@ -58,6 +58,11 @@ int libcheck_init (struct checker * c)
+ 	return 0;
+ }
+ 
++int libcheck_mp_init (struct checker * c)
++{
++	return 0;
++}
++
+ void libcheck_free (struct checker * c)
+ {
+ 	return;
+Index: multipath-tools-130222/libmultipath/checkers/directio.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/checkers/directio.c
++++ multipath-tools-130222/libmultipath/checkers/directio.c
+@@ -94,6 +94,11 @@ out:
+ 	return 1;
+ }
+ 
++int libcheck_mp_init(struct checker * c)
++{
++	return 0;
++}
++
+ void libcheck_free (struct checker * c)
+ {
+ 	struct directio_context * ct = (struct directio_context *)c->context;
+Index: multipath-tools-130222/libmultipath/checkers/emc_clariion.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/checkers/emc_clariion.c
++++ multipath-tools-130222/libmultipath/checkers/emc_clariion.c
+@@ -73,11 +73,18 @@ int libcheck_init (struct checker * c)
+ 		return 1;
+ 	((struct emc_clariion_checker_path_context *)c->context)->wwn_set = 0;
+ 
++	return 0;
++}
++
++int libcheck_mp_init (struct checker * c)
++{
+ 	/*
+ 	 * Allocate and initialize the multi-path global context.
+ 	 */
+ 	if (c->mpcontext && *c->mpcontext == NULL) {
+ 		void * mpctxt = malloc(sizeof(int));
++		if (!mpctxt)
++			return 1;
+ 		*c->mpcontext = mpctxt;
+ 		CLR_INACTIVE_SNAP(c);
+ 	}
+Index: multipath-tools-130222/libmultipath/checkers/hp_sw.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/checkers/hp_sw.c
++++ multipath-tools-130222/libmultipath/checkers/hp_sw.c
+@@ -39,6 +39,11 @@ int libcheck_init (struct checker * c)
+ 	return 0;
+ }
+ 
++int libcheck_mp_init(struct checker * c)
++{
++	return 0;
++}
++
+ void libcheck_free (struct checker * c)
+ {
+ 	return;
+Index: multipath-tools-130222/libmultipath/checkers/rdac.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/checkers/rdac.c
++++ multipath-tools-130222/libmultipath/checkers/rdac.c
+@@ -134,6 +134,11 @@ out:
+ 	return 0;
+ }
+ 
++int libcheck_mp_init(struct checker * c)
++{
++	return 0;
++}
++
+ void libcheck_free (struct checker * c)
+ {
+ 	return;
+Index: multipath-tools-130222/libmultipath/checkers/readsector0.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/checkers/readsector0.c
++++ multipath-tools-130222/libmultipath/checkers/readsector0.c
+@@ -18,6 +18,11 @@ int libcheck_init (struct checker * c)
+ 	return 0;
+ }
+ 
++int libcheck_mp_init(struct checker * c)
++{
++	return 0;
++}
++
+ void libcheck_free (struct checker * c)
+ {
+ 	return;
+Index: multipath-tools-130222/libmultipath/checkers/tur.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/checkers/tur.c
++++ multipath-tools-130222/libmultipath/checkers/tur.c
+@@ -158,6 +158,11 @@ int libcheck_init (struct checker * c)
+ 	return 0;
+ }
+ 
++int libcheck_mp_init(struct checker * c)
++{
++	return 0;
++}
++
+ void cleanup_context(struct tur_checker_context *ct)
+ {
+ 	pthread_mutex_destroy(&ct->lock);

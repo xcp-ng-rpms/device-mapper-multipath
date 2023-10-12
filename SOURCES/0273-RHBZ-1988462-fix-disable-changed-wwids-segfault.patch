@@ -1,0 +1,18 @@
+---
+ multipathd/main.c |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+Index: multipath-tools-130222/multipathd/main.c
+===================================================================
+--- multipath-tools-130222.orig/multipathd/main.c
++++ multipath-tools-130222/multipathd/main.c
+@@ -856,7 +856,8 @@ uev_update_path (struct uevent *uev, str
+ 			if (!pp->wwid_changed) {
+ 				pp->wwid_changed = 1;
+ 				pp->tick = 1;
+-				dm_fail_path(pp->mpp->alias, pp->dev_t);
++				if (pp->mpp)
++					dm_fail_path(pp->mpp->alias, pp->dev_t);
+ 			}
+ 		}
+ 		else {

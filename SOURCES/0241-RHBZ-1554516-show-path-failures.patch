@@ -1,0 +1,29 @@
+---
+ libmultipath/print.c |    7 +++++++
+ 1 file changed, 7 insertions(+)
+
+Index: multipath-tools-130222/libmultipath/print.c
+===================================================================
+--- multipath-tools-130222.orig/libmultipath/print.c
++++ multipath-tools-130222/libmultipath/print.c
+@@ -601,6 +601,12 @@ snprint_path_checker (char * buff, size_
+ 	return snprint_str(buff, len, c->name);
+ }
+ 
++static int
++snprint_path_failures(char * buff, size_t len, struct path * pp)
++{
++	return snprint_int(buff, len, pp->failcount);
++}
++
+ struct multipath_data mpd[] = {
+ 	{'n', "name",          0, snprint_name},
+ 	{'w', "uuid",          0, snprint_multipath_uuid},
+@@ -647,6 +653,7 @@ struct path_data pd[] = {
+ 	{'R', "host WWPN",     0, snprint_host_wwpn},
+ 	{'r', "target WWPN",   0, snprint_tgt_wwpn},
+ 	{'a', "host adapter",  0, snprint_host_adapter},
++	{'0', "failures",      0, snprint_path_failures},
+ 	{0, NULL, 0 , NULL}
+ };
+ 
